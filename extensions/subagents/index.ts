@@ -2,11 +2,10 @@
  * Subagent extension for pi-subagent-skills.
  *
  * Upstream credit:
- * - Inspired by the pi-rlm repository structure from https://github.com/manojlds/pi-rlm
  * - Implemented from the subagent extension pattern shown in
  *   https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions/subagent
  *
- * This file is an adapted package-local implementation, not a verbatim copy of either upstream repo.
+ * This file is an adapted package-local implementation, not a verbatim copy.
  */
 
 import { spawn } from "node:child_process";

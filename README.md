@@ -9,25 +9,32 @@ A Pi package that bundles:
 
 ## Upstream credit
 
-This package builds on ideas from upstream Pi ecosystem work and is intentionally not presented as wholly original.
+This package is not presented as wholly original.
 
-Primary upstream references:
+Primary upstream reference:
 
-- [`manojlds/pi-rlm`](https://github.com/manojlds/pi-rlm) — inspiration for packaging a reusable Pi workflow/orchestration repository
 - [`badlogic/pi-mono` subagent example](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions/subagent) — direct structural and behavioral inspiration for the bundled `subagent` extension pattern
-
-This repository adapts those ideas into a package-centered skill + subagent workflow for local use.
 
 ## Install
 
+From GitHub:
+
 ```bash
-pi install /root/pi-subagent-skills
+pi install git:github.com/sounkou-bioinfo/pi-subagent-skills
 ```
 
-Or from a git remote once you publish it:
+Pin a ref if desired:
 
 ```bash
-pi install git:github.com/you/pi-subagent-skills
+pi install git:github.com/sounkou-bioinfo/pi-subagent-skills@main
+```
+
+From a local checkout:
+
+```bash
+git clone https://github.com/sounkou-bioinfo/pi-subagent-skills.git
+cd pi-subagent-skills
+pi install .
 ```
 
 ## Included resources
