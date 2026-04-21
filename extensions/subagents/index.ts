@@ -191,6 +191,10 @@ async function writePromptToTempFile(agentName: string, prompt: string): Promise
   return { dir: tmpDir, filePath };
 }
 
+function qualifyModel(model: string): string {
+  return model.includes("/") ? model : `openai-codex/${model}`;
+}
+
 function getPiInvocation(args: string[]): { command: string; args: string[] } {
   const currentScript = process.argv[1];
   const isBunVirtualScript = currentScript?.startsWith("/$bunfs/root/");
@@ -233,7 +237,7 @@ async function runSingleAgent(
   }
 
   const args: string[] = ["--mode", "json", "-p", "--no-session"];
-  if (agent.model) args.push("--model", agent.model);
+  if (agent.model) args.push("--model", qualifyModel(agent.model));
   if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
 
   let tmpPromptDir: string | null = null;

@@ -38,10 +38,10 @@ pi install git:github.com/you/pi-subagent-skills
 
 ### Packaged agents
 
-- `scout` — fast repo recon
-- `planner` — implementation planning only
-- `worker` — executes changes
-- `reviewer` — reviews and sanity-checks results
+- `scout` — fast repo recon (`openai-codex/gpt-5.3-codex-spark` by default)
+- `planner` — implementation planning only (`openai-codex/gpt-5.4` by default)
+- `worker` — executes changes (`openai-codex/gpt-5.4` by default)
+- `reviewer` — reviews and sanity-checks results (`openai-codex/gpt-5.4` by default)
 
 ### Skills
 
