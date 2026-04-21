@@ -5,7 +5,12 @@
   "description": "Pi package with a bundled subagent extension, packaged agents, prompts, and orchestration skills.",
   "license": "MIT",
   "type": "module",
-  "keywords": ["pi-package", "pi-extension", "pi-skill", "subagent"],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-skill",
+    "subagent"
+  ],
   "files": [
     "extensions",
     "skills",
@@ -17,24 +22,34 @@
     "typecheck": "tsc --noEmit"
   },
   "pi": {
-    "extensions": ["./extensions/subagents"],
-    "skills": ["./skills"],
-    "prompts": ["./prompts"]
+    "extensions": [
+      "./extensions/subagents",
+      "./extensions/rlm"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
     "@mariozechner/pi-agent-core": "*",
+    "@mariozechner/pi-ai": "*",
     "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-tui": "*",
     "@sinclair/typebox": "*"
   },
   "devDependencies": {
-    "@mariozechner/pi-ai": "^0.57.1",
     "@mariozechner/pi-agent-core": "^0.57.1",
+    "@mariozechner/pi-ai": "^0.57.1",
     "@mariozechner/pi-coding-agent": "^0.57.1",
     "@mariozechner/pi-tui": "^0.57.1",
     "@sinclair/typebox": "^0.34.41",
     "@types/node": "^24.0.0",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "webr": "^0.5.9"
   }
 }

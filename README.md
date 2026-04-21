@@ -39,9 +39,10 @@ pi install .
 
 ## Included resources
 
-### Extension
+### Extensions
 
 - `subagent` — delegate a task to one or more specialized agents with isolated context windows
+- `rlm` — recursive long-context orchestration with a Node-based, webR-ready environment
 
 ### Packaged agents
 
@@ -61,6 +62,7 @@ pi install .
 - `/implement`
 - `/scout-and-plan`
 - `/parallel-recon`
+- `/rlm-r-eval-demo`
 
 ## Usage examples
 
@@ -81,6 +83,26 @@ Chain:
 ```text
 Use the subagent tool in a chain: scout -> planner -> worker -> reviewer.
 ```
+
+RLM over inline context:
+
+```text
+Use the rlm tool with task="How many lines mention apple?" and context="apple\nbanana\napple pie".
+```
+
+RLM can inspect context via structured actions such as:
+
+- `peek`
+- `grep`
+- `sample_chunks`
+- `map_chunks`
+- `decompose`
+- `r_eval` (via webR)
+- `solve`
+- `final`
+
+For counting, aggregation, and line-oriented summarization, the planner may prefer `r_eval`.
+Completed runs now also surface a top-level `strategy:` line such as `r_eval -> final` so CLI/json output makes the execution path easier to verify.
 
 ## Notes
 
