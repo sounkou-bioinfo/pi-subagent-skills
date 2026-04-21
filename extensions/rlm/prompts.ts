@@ -6,7 +6,7 @@ export function plannerPrompt(input: {
   depth: number;
   maxDepth: number;
   mode: "auto" | "solve" | "decompose";
-  contextKind: "text" | "files";
+  contextKind: "text" | "files" | "csv" | "json";
   contextChars: number;
   observationSummary: string;
   remainingNodeBudget: number;
@@ -38,8 +38,9 @@ export function plannerPrompt(input: {
     "- sample_chunks(chunkSize): inspect lightweight chunk previews",
     "- map_chunks(chunkSize, subtaskPrompt): recursively solve over chunks of the context",
     "- decompose(subtasks): recursively ask different questions over the same current context",
-    "- repl_eval(code): run JavaScript in a REPL with a context object and helpers; use this for codebases/files or arbitrary structured inspection",
-    "- r_eval(code): run R/webR code over text context only; use this for tabular and line-oriented text analysis",
+    "- repl_eval(code): run JavaScript in a REPL with a context object and helpers; use this for codebases/files/json/csv or arbitrary structured inspection",
+    "- Inside repl_eval you can use callRlm(task, subcontext) to launch recursive subcalls over derived subcontexts",
+    "- r_eval(code): run R/webR code over text/csv context; use this for tabular and line-oriented text analysis",
     "- solve: solve directly over the current context subset",
     "- final: return final answer if confident",
     "",
@@ -57,8 +58,10 @@ export function plannerPrompt(input: {
     "- Use map_chunks when the task should be applied across the whole context in partitions.",
     "- Use decompose when the task naturally splits into distinct questions over the same context.",
     "- Use repl_eval when the context is a codebase/files tree or when you need arbitrary programmatic inspection over the context object.",
+    "- Use repl_eval for json/csv when you want to work directly with parsed objects rather than raw text.",
     "- In repl_eval, write JavaScript that returns a value (for example `return listFiles().length`).",
-    "- Use r_eval for tabular counting, line filtering, aggregation, or regex-style work that R can express cleanly over text.",
+    "- Use callRlm(task, subcontext) inside repl_eval when you need a recursive model call over a derived subset/object/chunk.",
+    "- Use r_eval for tabular counting, line filtering, aggregation, or regex-style work that R can express cleanly over text or csv.",
     "- In r_eval, make the final expression evaluate to the value you want returned.",
     "- Do not emit markdown fences.",
     "- JSON only.",

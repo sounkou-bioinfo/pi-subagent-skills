@@ -133,15 +133,16 @@ function describeRecord(record: RunRecord): string {
   return lines.join("\n");
 }
 
-function formatCompletedRunText(result: { runId: string; artifacts: { dir: string }; final: string; root: { decision?: { action: string }; observations: Array<{ kind: string; text: string }> } }): string {
-  return [
+function formatCompletedRunText(result: { runId: string; artifacts: { dir: string }; final: string; visualizerSession?: string; root: { decision?: { action: string }; observations: Array<{ kind: string; text: string }> } }): string {
+  const lines = [
     "RLM run completed.",
     `run_id: ${result.runId}`,
     `artifacts: ${result.artifacts.dir}`,
     `strategy: ${summarizeStrategy(result)}`,
-    "",
-    result.final,
-  ].join("\n");
+  ];
+  if (result.visualizerSession) lines.push(`tmux_session: ${result.visualizerSession}`);
+  lines.push("", result.final);
+  return lines.join("\n");
 }
 
 function summarizeStrategy(result: { root: { decision?: { action: string }; observations: Array<{ kind: string; text: string }> } }): string {

@@ -11,8 +11,7 @@ function runTmux(args: string[]): Promise<void> {
 export async function startTmuxVisualizer(runId: string, eventsPath: string, treePath: string, outputPath: string): Promise<string | undefined> {
   const session = `pi-rlm-${runId}`;
   try {
-    await runTmux(["new-session", "-d", "-s", session, "bash", "-lc", `tail -f ${shellQuote(eventsPath)}`]);
-    await runTmux(["rename-window", "-t", `${session}:0`, "events"]);
+    await runTmux(["new-session", "-d", "-s", session, "-n", "events", "bash", "-lc", `touch ${shellQuote(eventsPath)} && tail -F ${shellQuote(eventsPath)}`]);
     await runTmux(["new-window", "-t", session, "-n", "tree", "bash", "-lc", `while true; do clear; test -f ${shellQuote(treePath)} && cat ${shellQuote(treePath)} || echo waiting for tree.json; sleep 1; done`]);
     await runTmux(["new-window", "-t", session, "-n", "output", "bash", "-lc", `while true; do clear; test -f ${shellQuote(outputPath)} && cat ${shellQuote(outputPath)} || echo waiting for output.md; sleep 1; done`]);
     return session;

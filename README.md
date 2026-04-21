@@ -42,7 +42,7 @@ pi install .
 ### Extensions
 
 - `subagent` — delegate a task to one or more specialized agents with isolated context windows
-- `rlm` — recursive long-context orchestration with a Node-based REPL environment plus webR for text/tabular work
+- `rlm` — recursive long-context orchestration with a Node-based REPL environment plus webR for text/tabular work, supporting text/files/csv/json contexts
 
 ### Packaged agents
 
@@ -98,12 +98,15 @@ RLM can inspect text or file-tree context via structured actions such as:
 - `map_chunks`
 - `decompose`
 - `repl_eval` (generic Node/JS REPL over the context object)
-- `r_eval` (via webR for text context)
+- `r_eval` (via webR for text/csv context)
 - `solve`
 - `final`
 
 For counting, aggregation, and line-oriented summarization, the planner may prefer `r_eval`.
 For codebases or file-tree context (`contextKind="files"` with a directory `contextPath`), the planner may prefer `repl_eval` with helpers like `listFiles()`, `readFile()`, `peekFile()`, and `grepFiles()`.
+For parsed tables and objects, you can use `contextKind="csv"` or `contextKind="json"` so the REPL gets first-class rows/columns or parsed JSON values.
+Inside `repl_eval`, recursive calls are available through `await callRlm(task, subcontext)`.
+When `backend="tmux"`, RLM starts a tmux visualizer session over events/tree/output artifacts.
 Completed runs now also surface a top-level `strategy:` line such as `repl_eval -> final` or `r_eval -> final` so CLI/json output makes the execution path easier to verify.
 
 ## Notes

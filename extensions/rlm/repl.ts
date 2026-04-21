@@ -1,4 +1,4 @@
-import { grepText, chunkText } from "./utils.js";
+import { chunkText, grepText } from "./utils.js";
 
 export type ReplContext =
   | {
@@ -9,14 +9,28 @@ export type ReplContext =
       kind: "files";
       root: string;
       files: Array<{ path: string; text: string }>;
+    }
+  | {
+      kind: "csv";
+      text: string;
+      columns: string[];
+      rows: Array<Record<string, string>>;
+    }
+  | {
+      kind: "json";
+      value: unknown;
     };
 
-export async function evalInRepl(code: string, context: ReplContext): Promise<string> {
+export interface ReplEvalOptions {
+  callRlm?: (task: string, subcontext?: unknown) => Promise<unknown>;
+}
+
+export async function evalInRepl(code: string, context: ReplContext, options: ReplEvalOptions = {}): Promise<string> {
   const AsyncFunction = Object.getPrototypeOf(async function () {
     // noop
   }).constructor as new (...args: string[]) => (...fnArgs: unknown[]) => Promise<unknown>;
 
-  const helpers = createHelpers(context);
+  const helpers = createHelpers(context, options);
   const names = Object.keys(helpers);
   const values = Object.values(helpers);
 
@@ -30,10 +44,18 @@ export async function evalInRepl(code: string, context: ReplContext): Promise<st
   }
 }
 
-function createHelpers(context: ReplContext): Record<string, unknown> {
+function createHelpers(context: ReplContext, options: ReplEvalOptions): Record<string, unknown> {
+  const base = {
+    callRlm: async (task: string, subcontext?: unknown) => {
+      if (!options.callRlm) throw new Error("callRlm is not available in this REPL");
+      return options.callRlm(task, subcontext);
+    },
+  };
+
   if (context.kind === "text") {
     const lines = context.text.split(/\r?\n/);
     return {
+      ...base,
       context: {
         kind: "text",
         chars: context.text.length,
@@ -47,24 +69,54 @@ function createHelpers(context: ReplContext): Record<string, unknown> {
     };
   }
 
+  if (context.kind === "files") {
+    return {
+      ...base,
+      context: {
+        kind: "files",
+        root: context.root,
+        fileCount: context.files.length,
+        totalChars: context.files.reduce((sum, file) => sum + file.text.length, 0),
+        files: context.files.map((file) => ({ path: file.path, chars: file.text.length })),
+      },
+      listFiles: (pattern?: string) => filterFilePaths(context.files.map((file) => file.path), pattern),
+      readFile: (path: string) => getFile(context.files, path)?.text ?? null,
+      peekFile: (path: string, start = 0, end = 2000) => {
+        const text = getFile(context.files, path)?.text ?? "";
+        const s = Math.max(0, Math.min(start, text.length));
+        const e = Math.max(s, Math.min(end, text.length));
+        return text.slice(s, e);
+      },
+      grepFiles: (pattern: string, limit = 20) => grepFiles(context.files, pattern, limit),
+      chunkFiles: (maxChars = 40000) => chunkFiles(context.files, maxChars),
+    };
+  }
+
+  if (context.kind === "csv") {
+    return {
+      ...base,
+      context: {
+        kind: "csv",
+        text: context.text,
+        columns: context.columns,
+        rowCount: context.rows.length,
+        rows: context.rows,
+      },
+      csvColumns: () => [...context.columns],
+      csvRows: () => context.rows.map((row) => ({ ...row })),
+      csvColumn: (name: string) => context.rows.map((row) => row[name]),
+    };
+  }
+
   return {
+    ...base,
     context: {
-      kind: "files",
-      root: context.root,
-      fileCount: context.files.length,
-      totalChars: context.files.reduce((sum, file) => sum + file.text.length, 0),
-      files: context.files.map((file) => ({ path: file.path, chars: file.text.length })),
+      kind: "json",
+      value: context.value,
     },
-    listFiles: (pattern?: string) => filterFilePaths(context.files.map((file) => file.path), pattern),
-    readFile: (path: string) => getFile(context.files, path)?.text ?? null,
-    peekFile: (path: string, start = 0, end = 2000) => {
-      const text = getFile(context.files, path)?.text ?? "";
-      const s = Math.max(0, Math.min(start, text.length));
-      const e = Math.max(s, Math.min(end, text.length));
-      return text.slice(s, e);
-    },
-    grepFiles: (pattern: string, limit = 20) => grepFiles(context.files, pattern, limit),
-    chunkFiles: (maxChars = 40000) => chunkFiles(context.files, maxChars),
+    jsonValue: context.value,
+    jsonKeys: () => (isRecord(context.value) ? Object.keys(context.value) : []),
+    jsonEntries: () => (isRecord(context.value) ? Object.entries(context.value) : []),
   };
 }
 
@@ -85,22 +137,12 @@ function getFile(files: Array<{ path: string; text: string }>, path: string) {
 
 function filterFilePaths(paths: string[], pattern?: string): string[] {
   if (!pattern) return paths;
-  let regex: RegExp;
-  try {
-    regex = new RegExp(pattern, "i");
-  } catch {
-    regex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-  }
+  const regex = safeRegex(pattern);
   return paths.filter((path) => regex.test(path));
 }
 
 function grepFiles(files: Array<{ path: string; text: string }>, pattern: string, limit: number): string[] {
-  let regex: RegExp;
-  try {
-    regex = new RegExp(pattern, "i");
-  } catch {
-    regex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-  }
+  const regex = safeRegex(pattern);
   const matches: string[] = [];
   for (const file of files) {
     if (matches.length >= limit) break;
@@ -129,4 +171,16 @@ function chunkFiles(files: Array<{ path: string; text: string }>, maxChars: numb
   }
   if (current.length > 0) chunks.push(current);
   return chunks;
+}
+
+function safeRegex(pattern: string): RegExp {
+  try {
+    return new RegExp(pattern, "i");
+  } catch {
+    return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

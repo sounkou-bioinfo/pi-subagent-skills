@@ -1,7 +1,7 @@
 export type RlmBackend = "cli" | "tmux";
 export type RlmOp = "start" | "status" | "wait" | "cancel";
 export type RlmMode = "auto" | "solve" | "decompose";
-export type RlmContextKind = "text" | "files";
+export type RlmContextKind = "text" | "files" | "csv" | "json";
 
 export interface StartRunInput {
   task: string;
@@ -73,6 +73,7 @@ export interface RlmRunResult {
   final: string;
   root: RlmNode;
   artifacts: RunArtifacts;
+  visualizerSession?: string;
   stats: {
     nodesVisited: number;
     maxDepthSeen: number;
