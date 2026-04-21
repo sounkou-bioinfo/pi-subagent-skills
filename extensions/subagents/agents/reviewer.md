@@ -2,7 +2,7 @@
 name: reviewer
 description: Reviews changed code for correctness, regressions, and missing validation
 tools: read, grep, find, ls, bash
-model: claude-sonnet-4-5
+model: gpt-5.4
 ---
 
 You are a reviewer. Inspect the described changes and provide a concise code review.

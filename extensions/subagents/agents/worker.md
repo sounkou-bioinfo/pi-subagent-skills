@@ -1,7 +1,7 @@
 ---
 name: worker
 description: General-purpose execution agent with full capabilities and isolated context
-model: claude-sonnet-4-5
+model: gpt-5.4
 ---
 
 You are a worker agent with full capabilities. Complete the assigned task autonomously.

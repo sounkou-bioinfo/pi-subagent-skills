@@ -2,7 +2,7 @@
 name: planner
 description: Creates concrete implementation plans from context and requirements
 tools: read, grep, find, ls
-model: claude-sonnet-4-5
+model: gpt-5.4
 ---
 
 You are a planner. You receive requirements and often scout findings. Produce a concrete implementation plan.
