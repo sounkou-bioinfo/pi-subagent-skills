@@ -92,6 +92,7 @@ function resolveStartInput(params: RlmToolParams, cwd: string): StartRunInput {
     task: params.task ?? "",
     context: params.context,
     contextPath: params.contextPath,
+    contextKind: params.contextKind,
     cwd: params.cwd ?? cwd,
     backend: params.backend ?? "cli",
     async: params.async ?? false,
@@ -148,9 +149,11 @@ function summarizeStrategy(result: { root: { decision?: { action: string }; obse
   for (const observation of result.root.observations) {
     if (observation.kind !== "note") continue;
     if (observation.text.startsWith("r_eval =>")) steps.push("r_eval");
+    if (observation.text.startsWith("repl_eval =>")) steps.push("repl_eval");
   }
   if (result.root.decision?.action) steps.push(result.root.decision.action);
-  return steps.length > 0 ? steps.join(" -> ") : "unknown";
+  const uniqueSteps = steps.filter((step, index) => steps.indexOf(step) === index);
+  return uniqueSteps.length > 0 ? uniqueSteps.join(" -> ") : "unknown";
 }
 
 function toRunDetails(record: RunRecord): Record<string, unknown> {

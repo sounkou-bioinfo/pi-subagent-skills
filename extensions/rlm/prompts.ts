@@ -6,12 +6,14 @@ export function plannerPrompt(input: {
   depth: number;
   maxDepth: number;
   mode: "auto" | "solve" | "decompose";
+  contextKind: "text" | "files";
   contextChars: number;
   observationSummary: string;
   remainingNodeBudget: number;
   maxBranching: number;
   maxChunkChars: number;
   grepLimit: number;
+  environmentSummary: string;
 }): string {
   return [
     "You are the controller for a recursive language model (RLM).",
@@ -22,19 +24,22 @@ export function plannerPrompt(input: {
     `Depth: ${input.depth}/${input.maxDepth}`,
     `Mode: ${input.mode}`,
     `Task: ${input.task}`,
+    `Context kind: ${input.contextKind}`,
     `Context characters available in environment: ${input.contextChars}`,
     `Remaining node budget: ${input.remainingNodeBudget}`,
     `Max branching: ${input.maxBranching}`,
     `Suggested max chunk chars: ${input.maxChunkChars}`,
     `Suggested grep result limit: ${input.grepLimit}`,
     "",
-    "Environment capabilities (Node + webR-ready environment):",
-    "- peek(start,end): inspect a substring range",
-    "- grep(pattern,limit): inspect matching lines",
+    "Environment capabilities:",
+    `- summary: ${input.environmentSummary}`,
+    "- peek(start,end): inspect a range from text or from the file manifest",
+    "- grep(pattern,limit): inspect matching lines or file hits",
     "- sample_chunks(chunkSize): inspect lightweight chunk previews",
     "- map_chunks(chunkSize, subtaskPrompt): recursively solve over chunks of the context",
     "- decompose(subtasks): recursively ask different questions over the same current context",
-    "- r_eval(code): run R/webR code over context_text, context_lines(), context_grep(), context_chunks()",
+    "- repl_eval(code): run JavaScript in a REPL with a context object and helpers; use this for codebases/files or arbitrary structured inspection",
+    "- r_eval(code): run R/webR code over text context only; use this for tabular and line-oriented text analysis",
     "- solve: solve directly over the current context subset",
     "- final: return final answer if confident",
     "",
@@ -42,16 +47,19 @@ export function plannerPrompt(input: {
     input.observationSummary || "(none yet)",
     "",
     "Return JSON with exactly this shape:",
-    '{"action":"final|solve|decompose|peek|grep|sample_chunks|map_chunks|r_eval","reason":"...","answer":"... optional","subtasks":["..."],"start":0,"end":1000,"pattern":"...","chunkSize":20000,"subtaskPrompt":"...","code":"..."}',
+    '{"action":"final|solve|decompose|peek|grep|sample_chunks|map_chunks|repl_eval|r_eval","reason":"...","answer":"... optional","subtasks":["..."],"start":0,"end":1000,"pattern":"...","chunkSize":20000,"subtaskPrompt":"...","code":"..."}',
     "",
     "Rules:",
     "- Use final only if you can answer now.",
     "- Use solve if the current context subset is sufficient and should be sent to a model call.",
-    "- Use peek, grep, sample_chunks, or r_eval before solve when you still need evidence.",
+    "- Use peek, grep, sample_chunks, repl_eval, or r_eval before solve when you still need evidence.",
     "- Use sample_chunks when you want compact previews before deciding how to recurse.",
     "- Use map_chunks when the task should be applied across the whole context in partitions.",
     "- Use decompose when the task naturally splits into distinct questions over the same context.",
-    "- Use r_eval for tabular counting, line filtering, aggregation, or regex-style work that R can express cleanly.",
+    "- Use repl_eval when the context is a codebase/files tree or when you need arbitrary programmatic inspection over the context object.",
+    "- In repl_eval, write JavaScript that returns a value (for example `return listFiles().length`).",
+    "- Use r_eval for tabular counting, line filtering, aggregation, or regex-style work that R can express cleanly over text.",
+    "- In r_eval, make the final expression evaluate to the value you want returned.",
     "- Do not emit markdown fences.",
     "- JSON only.",
   ].join("\n");

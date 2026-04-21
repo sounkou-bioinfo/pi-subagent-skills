@@ -4,13 +4,15 @@ import { Static, Type } from "@sinclair/typebox";
 const opSchema = StringEnum(["start", "status", "wait", "cancel"] as const);
 const backendSchema = StringEnum(["cli", "tmux"] as const);
 const modeSchema = StringEnum(["auto", "solve", "decompose"] as const);
+const contextKindSchema = StringEnum(["text", "files"] as const);
 
 export const rlmToolParamsSchema = Type.Object({
   op: Type.Optional(opSchema),
   id: Type.Optional(Type.String({ description: "Run ID for status/wait/cancel" })),
   task: Type.Optional(Type.String({ description: "Question or task to answer over the provided context" })),
   context: Type.Optional(Type.String({ description: "Inline context to store in the RLM environment" })),
-  contextPath: Type.Optional(Type.String({ description: "Path to a file whose contents become the RLM context" })),
+  contextPath: Type.Optional(Type.String({ description: "Path to a file or directory whose contents become the RLM context" })),
+  contextKind: Type.Optional(contextKindSchema),
   backend: Type.Optional(backendSchema),
   mode: Type.Optional(modeSchema),
   async: Type.Optional(Type.Boolean({ description: "Return immediately and run in background" })),

@@ -1,11 +1,13 @@
 export type RlmBackend = "cli" | "tmux";
 export type RlmOp = "start" | "status" | "wait" | "cancel";
 export type RlmMode = "auto" | "solve" | "decompose";
+export type RlmContextKind = "text" | "files";
 
 export interface StartRunInput {
   task: string;
   context?: string;
   contextPath?: string;
+  contextKind?: RlmContextKind;
   cwd: string;
   backend: RlmBackend;
   async: boolean;
@@ -31,7 +33,7 @@ export interface RunArtifacts {
 }
 
 export interface RlmAction {
-  action: "final" | "solve" | "decompose" | "peek" | "grep" | "map_chunks" | "sample_chunks" | "r_eval";
+  action: "final" | "solve" | "decompose" | "peek" | "grep" | "map_chunks" | "sample_chunks" | "r_eval" | "repl_eval";
   reason: string;
   answer?: string;
   subtasks?: string[];
@@ -52,6 +54,7 @@ export interface RlmNode {
   id: string;
   depth: number;
   task: string;
+  contextKind: RlmContextKind;
   contextChars: number;
   status: "running" | "completed" | "failed" | "cancelled";
   startedAt: number;
