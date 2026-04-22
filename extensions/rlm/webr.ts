@@ -74,7 +74,7 @@ export async function createWebRSession(
   if (artifactDir) await ensureWebRDir(webR, webRArtifactDir);
   await ensureWebRDir(webR, webRPackageLibDir);
   await restoreWebRPackageCache(webR, webRPackageLibDir, sharedWebRPackageCacheDir);
-  await webR.evalRString(buildSessionSetup({ context, prepared, artifactDir: artifactDir ? webRArtifactDir : "", packageLibDir: webRPackageLibDir }));
+  await webR.evalRVoid(buildSessionSetup({ context, prepared, artifactDir: artifactDir ? webRArtifactDir : "", packageLibDir: webRPackageLibDir }));
 
   return {
     async eval(code: string): Promise<EvalWithWebRResult> {
@@ -216,15 +216,15 @@ function buildSessionSetup(input: {
     '  bytes <- utf8ToInt(x)',
     '  parts <- vapply(bytes, function(b) {',
     '    ch <- intToUtf8(b)',
-    '    if (b == 34) return("\\\"")',
-    '    if (b == 92) return("\\\\")',
-    '    if (b == 10) return("\\n")',
-    '    if (b == 13) return("\\r")',
-    '    if (b == 9) return("\\t")',
-    '    if (b < 32) return(sprintf("\\\\u%04x", b))',
+    '    if (b == 34) return(paste0(intToUtf8(92), intToUtf8(34)))',
+    '    if (b == 92) return(intToUtf8(92))',
+    '    if (b == 10) return(paste0(intToUtf8(92), "n"))',
+    '    if (b == 13) return(paste0(intToUtf8(92), "r"))',
+    '    if (b == 9) return(paste0(intToUtf8(92), "t"))',
+    '    if (b < 32) return(paste0(intToUtf8(92), "u", sprintf("%04x", b)))',
     '    ch',
     '  }, character(1))',
-    '  paste0("\"", paste(parts, collapse = ""), "\"")',
+    '  paste0(intToUtf8(34), paste(parts, collapse = ""), intToUtf8(34))',
     '}',
     '.pi_rlm_to_json <- function(x) {',
     '  if (is.null(x)) return("null")',
@@ -259,7 +259,8 @@ function buildSessionSetup(input: {
     '.pi_rlm_prefetched <- list()',
     '.pi_rlm_call_index <- 0L',
     '.pi_rlm_signal <- function(kind, payload) {',
-    '  json <- paste0("{\"kind\":", .pi_rlm_to_json(kind), ",\"payload\":", .pi_rlm_to_json(payload), "}")',
+    '  q <- intToUtf8(34)',
+    '  json <- paste0("{", q, "kind", q, ":", .pi_rlm_to_json(kind), ",", q, "payload", q, ":", .pi_rlm_to_json(payload), "}")',
     `  stop(paste0(${toRStringLiteral(rlmSignalPrefix)}, json), call. = FALSE)`,
     '}',
     'rlm_call <- function(task, subcontext = NULL, context_kind = NULL) {',

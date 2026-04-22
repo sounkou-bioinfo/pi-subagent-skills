@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Removed `jsonlite` from the webR control/signaling hot path for `FINAL(...)`, `FINAL_VAR(...)`, and `rlm_call(...)`
+- Added a shared host-side webR package cache at `/tmp/pi-webr-package-cache`
+- Fixed webR session setup to use `evalRVoid(...)` so setup code can safely return `NULL`
+- Hardened base-R JSON signaling/escaping used by recursive webR RLM helpers
+
 ## 0.1.0
 
 - Initial release

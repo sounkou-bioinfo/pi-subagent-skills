@@ -121,6 +121,7 @@ If a `repl_eval` result includes that snippet under a field like `rLoadCode`, th
 RLM also extracts `r_load_code:` from `r_eval` outputs when the loader snippet is returned directly or under a `Loader snippet:` section.
 Inside `r_eval`, `context_load()` loads the current text/csv/parquet context in R and `context_r_load_code()` returns the loader snippet.
 Inside `r_eval`, `install_webr_packages(c("pkg"))` installs wasm-ready packages from the webR binary repository at `https://repo.r-wasm.org/` using the supported webR package path.
+Installed webR packages are cached across sessions in a shared host cache (`/tmp/pi-webr-package-cache`) and restored into each node-local webR library on startup, so repeated installs avoid the worst cold-start overhead.
 Inside `r_eval`, `save_plot("plot.png", expr)` saves plot files into the run artifact directory and returns the artifact filename.
 Inside `r_eval`, `rlm_call(task, subcontext = NULL, context_kind = NULL)` launches a recursive child RLM call from R and returns a list with `result`, `error`, `contextKind`, and `strategy`.
 Inside `r_eval`, `FINAL(x)` returns a final answer directly from R and `FINAL_VAR("name")` returns the value of a named R variable.
