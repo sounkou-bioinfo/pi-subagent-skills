@@ -182,6 +182,11 @@ function extractRLoadCode(root: { observations: Array<{ kind: string; text: stri
     if (observation.text.startsWith("r_load_code =>")) {
       return observation.text.slice("r_load_code =>".length).trim();
     }
+    if (observation.text.startsWith("r_eval =>")) {
+      const extracted = extractRLoadCodeFromREval(observation.text.slice("r_eval =>".length).trim());
+      if (extracted) return extracted;
+      continue;
+    }
     if (!observation.text.startsWith("repl_eval =>")) continue;
     const payload = safeJsonParse(observation.text.slice("repl_eval =>".length).trim());
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) continue;
@@ -191,6 +196,22 @@ function extractRLoadCode(root: { observations: Array<{ kind: string; text: stri
     }
   }
   return undefined;
+}
+
+function extractRLoadCodeFromREval(text: string): string | undefined {
+  const markerMatch = text.match(/(?:^|\n)Loader snippet:\n([\s\S]+)$/);
+  if (markerMatch?.[1]?.trim()) return markerMatch[1].trim();
+
+  const lines = text.split("\n");
+  if (lines.length < 2) return undefined;
+  const candidate = lines.slice(1).join("\n").trim();
+  if (!candidate) return undefined;
+  if (looksLikeRLoadCode(candidate)) return candidate;
+  return undefined;
+}
+
+function looksLikeRLoadCode(text: string): boolean {
+  return /(read_parquet|arrow::|duckdb::|DBI::|read\.csv|data\.frame\(|requireNamespace\(|context\$path|context\$text)/.test(text);
 }
 
 function safeJsonParse(text: string): unknown {
