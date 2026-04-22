@@ -94,6 +94,12 @@ RLM over inline context:
 Use the rlm tool with task="How many lines mention apple?" and context="apple\nbanana\napple pie".
 ```
 
+Deterministic R/webR evaluation:
+
+```text
+Use the rlm tool with task="Run set.seed(1995); sum(rnorm(100)) in R and return just the numeric result. Use r_eval." and context="R numeric task".
+```
+
 RLM can inspect text or file-tree context via structured actions such as:
 
 - `peek`
@@ -106,7 +112,7 @@ RLM can inspect text or file-tree context via structured actions such as:
 - `solve`
 - `final`
 
-For counting, aggregation, and line-oriented summarization, the planner may prefer `r_eval`.
+For counting, aggregation, line-oriented summarization, and deterministic R computations, the planner may prefer `r_eval`.
 For codebases or file-tree context (`contextKind="files"` with a directory `contextPath`), the planner may prefer `repl_eval` with helpers like `listFiles()`, `readFile()`, `peekFile()`, and `grepFiles()`.
 For parsed tables and objects, you can use `contextKind="csv"`, `contextKind="json"`, or `contextKind="parquet"` so the REPL gets first-class rows/columns or parsed JSON/parquet values.
 Inside `repl_eval`, recursive calls are available through `await callRlm(task, subcontext)`.

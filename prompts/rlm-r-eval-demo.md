@@ -1,17 +1,14 @@
 ---
-description: Exercise the RLM tool with a counting-style task that should prefer r_eval
+description: Exercise the RLM tool with a deterministic R computation that should require r_eval
 argument-hint: "[extra instructions]"
 ---
 Use the `rlm` tool with:
 
-- `task`: `How many lines mention apple? Use r_eval if helpful. $@`
+- `task`: `Run set.seed(1995); sum(rnorm(100)) in R and return just the numeric result. Use r_eval. $@`
 - `context`:
 
 ```text
-apple
-banana
-apple pie
-pear
+R numeric task
 ```
 
 - `mode`: `auto`
