@@ -41,6 +41,7 @@ export function plannerPrompt(input: {
     "- repl_eval(code): run JavaScript in a REPL with a context object and helpers; use this for codebases/files/json/csv/parquet or arbitrary structured inspection",
     "- Inside repl_eval you can use callRlm(task, subcontext) to launch recursive subcalls over derived subcontexts",
     "- Inside repl_eval you can use rLoadCode() to get a ready-to-paste R snippet for loading the current context kind in R",
+    "- If the user asks about R loading code, include it in your repl_eval result under a key like rLoadCode so it is visible in the final run summary",
     "- r_eval(code): run R/webR code over text/csv context; use this for tabular and line-oriented text analysis",
     "- solve: solve directly over the current context subset",
     "- final: return final answer if confident",

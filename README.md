@@ -111,6 +111,7 @@ For codebases or file-tree context (`contextKind="files"` with a directory `cont
 For parsed tables and objects, you can use `contextKind="csv"`, `contextKind="json"`, or `contextKind="parquet"` so the REPL gets first-class rows/columns or parsed JSON/parquet values.
 Inside `repl_eval`, recursive calls are available through `await callRlm(task, subcontext)`.
 Inside `repl_eval`, `rLoadCode()` returns context-aware R loading code for text/csv/json/parquet workflows.
+If a `repl_eval` result includes that snippet under a field like `rLoadCode`, the top-level RLM summary also surfaces it as an `r_load_code:` block.
 When `backend="tmux"`, RLM starts a tmux visualizer session over events/tree/output artifacts.
 Completed runs now also surface a top-level `strategy:` line such as `repl_eval -> final` or `r_eval -> final` so CLI/json output makes the execution path easier to verify.
 

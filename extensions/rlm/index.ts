@@ -131,6 +131,8 @@ function describeRecord(record: RunRecord): string {
     if (record.result.visualizerSession) lines.push(`tmux_session: ${record.result.visualizerSession}`);
     const childSummary = summarizeChildren(record.result.root);
     if (childSummary.length > 0) lines.push(...childSummary);
+    const rLoadCode = extractRLoadCode(record.result.root);
+    if (rLoadCode) lines.push("r_load_code:", indentBlock(rLoadCode, "  "));
     lines.push(`final: ${record.result.final}`);
   }
   return lines.join("\n");
@@ -146,6 +148,8 @@ function formatCompletedRunText(result: { runId: string; artifacts: { dir: strin
   if (result.visualizerSession) lines.push(`tmux_session: ${result.visualizerSession}`);
   const childSummary = summarizeChildren(result.root);
   if (childSummary.length > 0) lines.push(...childSummary);
+  const rLoadCode = extractRLoadCode(result.root);
+  if (rLoadCode) lines.push("r_load_code:", indentBlock(rLoadCode, "  "));
   lines.push("", result.final);
   return lines.join("\n");
 }
@@ -170,6 +174,38 @@ function summarizeChildren(root: { children: Array<{ id: string; task: string; s
   }
   if (root.children.length > 5) lines.push(`- ... ${root.children.length - 5} more child calls`);
   return lines;
+}
+
+function extractRLoadCode(root: { observations: Array<{ kind: string; text: string }> }): string | undefined {
+  for (const observation of root.observations) {
+    if (observation.kind !== "note") continue;
+    if (observation.text.startsWith("r_load_code =>")) {
+      return observation.text.slice("r_load_code =>".length).trim();
+    }
+    if (!observation.text.startsWith("repl_eval =>")) continue;
+    const payload = safeJsonParse(observation.text.slice("repl_eval =>".length).trim());
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) continue;
+    const record = payload as Record<string, unknown>;
+    for (const key of ["rLoadCode", "r_load_code", "loadCode"]) {
+      if (typeof record[key] === "string" && record[key].trim()) return record[key].trim();
+    }
+  }
+  return undefined;
+}
+
+function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+function indentBlock(text: string, indent: string): string {
+  return text
+    .split("\n")
+    .map((line) => `${indent}${line}`)
+    .join("\n");
 }
 
 function toRunDetails(record: RunRecord): Record<string, unknown> {
