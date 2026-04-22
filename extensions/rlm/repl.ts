@@ -19,6 +19,12 @@ export type ReplContext =
   | {
       kind: "json";
       value: unknown;
+    }
+  | {
+      kind: "parquet";
+      path: string;
+      columns: string[];
+      rows: Array<Record<string, unknown>>;
     };
 
 export interface ReplEvalOptions {
@@ -50,6 +56,7 @@ function createHelpers(context: ReplContext, options: ReplEvalOptions): Record<s
       if (!options.callRlm) throw new Error("callRlm is not available in this REPL");
       return options.callRlm(task, subcontext);
     },
+    rLoadCode: () => rLoadCodeForContext(context),
   };
 
   if (context.kind === "text") {
@@ -108,15 +115,31 @@ function createHelpers(context: ReplContext, options: ReplEvalOptions): Record<s
     };
   }
 
+  if (context.kind === "json") {
+    return {
+      ...base,
+      context: {
+        kind: "json",
+        value: context.value,
+      },
+      jsonValue: context.value,
+      jsonKeys: () => (isRecord(context.value) ? Object.keys(context.value) : []),
+      jsonEntries: () => (isRecord(context.value) ? Object.entries(context.value) : []),
+    };
+  }
+
   return {
     ...base,
     context: {
-      kind: "json",
-      value: context.value,
+      kind: "parquet",
+      path: context.path,
+      columns: context.columns,
+      rowCount: context.rows.length,
+      rows: context.rows,
     },
-    jsonValue: context.value,
-    jsonKeys: () => (isRecord(context.value) ? Object.keys(context.value) : []),
-    jsonEntries: () => (isRecord(context.value) ? Object.entries(context.value) : []),
+    parquetPath: context.path,
+    parquetColumns: () => [...context.columns],
+    parquetRows: () => context.rows.map((row) => ({ ...row })),
   };
 }
 
@@ -183,4 +206,46 @@ function safeRegex(pattern: string): RegExp {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function rLoadCodeForContext(context: ReplContext): string {
+  switch (context.kind) {
+    case "text":
+      return [
+        '# text already loaded as context_text',
+        'lines <- strsplit(context_text, "\\n", fixed = TRUE)[[1]]',
+        'data.frame(line = seq_along(lines), text = lines)',
+      ].join("\n");
+    case "csv":
+      return [
+        '# csv already available in-memory at context$text',
+        'df <- utils::read.csv(text = context$text, stringsAsFactors = FALSE)',
+        'df',
+      ].join("\n");
+    case "json":
+      return [
+        '# requires jsonlite in R/webR if available',
+        'if (!requireNamespace("jsonlite", quietly = TRUE)) stop("Install jsonlite to load JSON in R")',
+        `jsonlite::fromJSON(${JSON.stringify(JSON.stringify(context.value))})`,
+      ].join("\n");
+    case "parquet":
+      return [
+        '# parquet file path is available at context$path',
+        'if (requireNamespace("arrow", quietly = TRUE)) {',
+        '  arrow::read_parquet(context$path)',
+        '} else if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietly = TRUE)) {',
+        '  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")',
+        '  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)',
+        '  DBI::dbGetQuery(con, paste0("SELECT * FROM read_parquet(", shQuote(context$path), ")"))',
+        '} else {',
+        '  stop("Install arrow or duckdb+DBI to load parquet in R")',
+        '}',
+      ].join("\n");
+    case "files":
+      return [
+        '# files are usually easier to inspect via JS REPL helpers',
+        '# if you need R, serialize selected files to text first',
+        'stop("Prefer repl_eval for files context")',
+      ].join("\n");
+  }
 }

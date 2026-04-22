@@ -4,7 +4,7 @@ import { Static, Type } from "@sinclair/typebox";
 const opSchema = StringEnum(["start", "status", "wait", "cancel"] as const);
 const backendSchema = StringEnum(["cli", "tmux"] as const);
 const modeSchema = StringEnum(["auto", "solve", "decompose"] as const);
-const contextKindSchema = StringEnum(["text", "files", "csv", "json"] as const);
+const contextKindSchema = StringEnum(["text", "files", "csv", "json", "parquet"] as const);
 
 export const rlmToolParamsSchema = Type.Object({
   op: Type.Optional(opSchema),

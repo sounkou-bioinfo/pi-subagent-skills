@@ -1,7 +1,7 @@
 export type RlmBackend = "cli" | "tmux";
 export type RlmOp = "start" | "status" | "wait" | "cancel";
 export type RlmMode = "auto" | "solve" | "decompose";
-export type RlmContextKind = "text" | "files" | "csv" | "json";
+export type RlmContextKind = "text" | "files" | "csv" | "json" | "parquet";
 
 export interface StartRunInput {
   task: string;

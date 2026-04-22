@@ -128,12 +128,15 @@ function describeRecord(record: RunRecord): string {
   if (record.result) {
     lines.push(`artifacts: ${record.result.artifacts.dir}`);
     lines.push(`strategy: ${summarizeStrategy(record.result)}`);
+    if (record.result.visualizerSession) lines.push(`tmux_session: ${record.result.visualizerSession}`);
+    const childSummary = summarizeChildren(record.result.root);
+    if (childSummary.length > 0) lines.push(...childSummary);
     lines.push(`final: ${record.result.final}`);
   }
   return lines.join("\n");
 }
 
-function formatCompletedRunText(result: { runId: string; artifacts: { dir: string }; final: string; visualizerSession?: string; root: { decision?: { action: string }; observations: Array<{ kind: string; text: string }> } }): string {
+function formatCompletedRunText(result: { runId: string; artifacts: { dir: string }; final: string; visualizerSession?: string; root: { decision?: { action: string }; observations: Array<{ kind: string; text: string }>; children: Array<{ id: string; task: string; status: string; result?: string; error?: string }> } }): string {
   const lines = [
     "RLM run completed.",
     `run_id: ${result.runId}`,
@@ -141,6 +144,8 @@ function formatCompletedRunText(result: { runId: string; artifacts: { dir: strin
     `strategy: ${summarizeStrategy(result)}`,
   ];
   if (result.visualizerSession) lines.push(`tmux_session: ${result.visualizerSession}`);
+  const childSummary = summarizeChildren(result.root);
+  if (childSummary.length > 0) lines.push(...childSummary);
   lines.push("", result.final);
   return lines.join("\n");
 }
@@ -155,6 +160,16 @@ function summarizeStrategy(result: { root: { decision?: { action: string }; obse
   if (result.root.decision?.action) steps.push(result.root.decision.action);
   const uniqueSteps = steps.filter((step, index) => steps.indexOf(step) === index);
   return uniqueSteps.length > 0 ? uniqueSteps.join(" -> ") : "unknown";
+}
+
+function summarizeChildren(root: { children: Array<{ id: string; task: string; status: string; result?: string; error?: string }> }): string[] {
+  if (!root.children || root.children.length === 0) return [];
+  const lines = [`child_calls: ${root.children.length}`];
+  for (const child of root.children.slice(0, 5)) {
+    lines.push(`- ${child.id} | ${child.status} | task=${shorten(child.task, 64)} | result=${shorten(child.result || child.error || "", 64)}`);
+  }
+  if (root.children.length > 5) lines.push(`- ... ${root.children.length - 5} more child calls`);
+  return lines;
 }
 
 function toRunDetails(record: RunRecord): Record<string, unknown> {

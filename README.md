@@ -42,7 +42,7 @@ pi install .
 ### Extensions
 
 - `subagent` — delegate a task to one or more specialized agents with isolated context windows
-- `rlm` — recursive long-context orchestration with a Node-based REPL environment plus webR for text/tabular work, supporting text/files/csv/json contexts
+- `rlm` — recursive long-context orchestration with a Node-based REPL environment plus webR for text/tabular work, supporting text/files/csv/json/parquet contexts
 
 ### Packaged agents
 
@@ -63,6 +63,10 @@ pi install .
 - `/scout-and-plan`
 - `/parallel-recon`
 - `/rlm-r-eval-demo`
+- `/rlm-codebase-demo`
+- `/rlm-csv-demo`
+- `/rlm-json-demo`
+- `/rlm-parquet-demo`
 
 ## Usage examples
 
@@ -104,8 +108,9 @@ RLM can inspect text or file-tree context via structured actions such as:
 
 For counting, aggregation, and line-oriented summarization, the planner may prefer `r_eval`.
 For codebases or file-tree context (`contextKind="files"` with a directory `contextPath`), the planner may prefer `repl_eval` with helpers like `listFiles()`, `readFile()`, `peekFile()`, and `grepFiles()`.
-For parsed tables and objects, you can use `contextKind="csv"` or `contextKind="json"` so the REPL gets first-class rows/columns or parsed JSON values.
+For parsed tables and objects, you can use `contextKind="csv"`, `contextKind="json"`, or `contextKind="parquet"` so the REPL gets first-class rows/columns or parsed JSON/parquet values.
 Inside `repl_eval`, recursive calls are available through `await callRlm(task, subcontext)`.
+Inside `repl_eval`, `rLoadCode()` returns context-aware R loading code for text/csv/json/parquet workflows.
 When `backend="tmux"`, RLM starts a tmux visualizer session over events/tree/output artifacts.
 Completed runs now also surface a top-level `strategy:` line such as `repl_eval -> final` or `r_eval -> final` so CLI/json output makes the execution path easier to verify.
 

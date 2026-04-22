@@ -6,7 +6,7 @@ export function plannerPrompt(input: {
   depth: number;
   maxDepth: number;
   mode: "auto" | "solve" | "decompose";
-  contextKind: "text" | "files" | "csv" | "json";
+  contextKind: "text" | "files" | "csv" | "json" | "parquet";
   contextChars: number;
   observationSummary: string;
   remainingNodeBudget: number;
@@ -38,8 +38,9 @@ export function plannerPrompt(input: {
     "- sample_chunks(chunkSize): inspect lightweight chunk previews",
     "- map_chunks(chunkSize, subtaskPrompt): recursively solve over chunks of the context",
     "- decompose(subtasks): recursively ask different questions over the same current context",
-    "- repl_eval(code): run JavaScript in a REPL with a context object and helpers; use this for codebases/files/json/csv or arbitrary structured inspection",
+    "- repl_eval(code): run JavaScript in a REPL with a context object and helpers; use this for codebases/files/json/csv/parquet or arbitrary structured inspection",
     "- Inside repl_eval you can use callRlm(task, subcontext) to launch recursive subcalls over derived subcontexts",
+    "- Inside repl_eval you can use rLoadCode() to get a ready-to-paste R snippet for loading the current context kind in R",
     "- r_eval(code): run R/webR code over text/csv context; use this for tabular and line-oriented text analysis",
     "- solve: solve directly over the current context subset",
     "- final: return final answer if confident",
@@ -57,10 +58,14 @@ export function plannerPrompt(input: {
     "- Use sample_chunks when you want compact previews before deciding how to recurse.",
     "- Use map_chunks when the task should be applied across the whole context in partitions.",
     "- Use decompose when the task naturally splits into distinct questions over the same context.",
+    "- Prefer repl_eval first for files/json/csv/parquet context unless a direct final answer is already obvious from prior observations.",
     "- Use repl_eval when the context is a codebase/files tree or when you need arbitrary programmatic inspection over the context object.",
-    "- Use repl_eval for json/csv when you want to work directly with parsed objects rather than raw text.",
+    "- Use repl_eval for json/csv/parquet when you want to work directly with parsed objects rather than raw text.",
     "- In repl_eval, write JavaScript that returns a value (for example `return listFiles().length`).",
-    "- Use callRlm(task, subcontext) inside repl_eval when you need a recursive model call over a derived subset/object/chunk.",
+    "- Prefer callRlm(task, subcontext) inside repl_eval when you derive a meaningful subset/object/chunk and want model judgment over that derived context.",
+    "- Use callRlm(task, subcontext) inside repl_eval for semantic summarization, classification, or answering over a filtered subset.",
+    "- Prefer r_eval for text/csv counting, line filtering, aggregation, grouping, and simple tabular computation before falling back to solve.",
+    "- For parquet with R, use repl_eval plus rLoadCode() to generate the appropriate loader snippet (for example arrow or duckdb-based loading).",
     "- Use r_eval for tabular counting, line filtering, aggregation, or regex-style work that R can express cleanly over text or csv.",
     "- In r_eval, make the final expression evaluate to the value you want returned.",
     "- Do not emit markdown fences.",

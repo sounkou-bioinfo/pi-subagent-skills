@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
+import { asyncBufferFromFile, parquetReadObjects } from "hyparquet";
 import { completeWithCli } from "./backends.js";
 import { plannerPrompt, solverPrompt, synthesisPrompt } from "./prompts.js";
 import { evalInRepl, type ReplContext } from "./repl.js";
@@ -26,7 +27,8 @@ type ResolvedContext =
   | { kind: "text"; label: string; text: string }
   | { kind: "files"; label: string; root: string; files: FileEntry[] }
   | { kind: "csv"; label: string; text: string; columns: string[]; rows: CsvRow[] }
-  | { kind: "json"; label: string; value: unknown };
+  | { kind: "json"; label: string; value: unknown }
+  | { kind: "parquet"; label: string; path: string; columns: string[]; rows: Array<Record<string, unknown>> };
 
 const DEFAULT_IGNORED_DIRS = new Set([".git", "node_modules", "dist", "build", "coverage", ".next", ".turbo"]);
 const MAX_FILE_CONTEXT_FILES = 2000;
@@ -47,6 +49,8 @@ class NodeEnvironment {
         return `kind=csv; rows=${this.context.rows.length}; columns=${this.context.columns.length}; capabilities=peek,grep,sample_chunks,map_chunks,decompose,repl_eval,r_eval,solve`;
       case "json":
         return `kind=json; chars=${JSON.stringify(this.context.value)?.length ?? 0}; capabilities=peek,grep,sample_chunks,map_chunks,decompose,repl_eval,solve`;
+      case "parquet":
+        return `kind=parquet; path=${this.context.path}; rows=${this.context.rows.length}; columns=${this.context.columns.length}; capabilities=peek,grep,sample_chunks,map_chunks,decompose,repl_eval,r_eval,solve`;
     }
   }
 
@@ -64,6 +68,8 @@ class NodeEnvironment {
         return context.text.length;
       case "json":
         return JSON.stringify(context.value)?.length ?? 0;
+      case "parquet":
+        return JSON.stringify(context.rows)?.length ?? 0;
     }
   }
 
@@ -77,6 +83,8 @@ class NodeEnvironment {
         return renderCsvContext(context);
       case "json":
         return JSON.stringify(context.value, null, 2) ?? "null";
+      case "parquet":
+        return renderParquetContext(context);
     }
   }
 
@@ -97,6 +105,8 @@ class NodeEnvironment {
         return grepText(renderCsvContext(this.context), pattern, this.grepLimit);
       case "json":
         return grepText(JSON.stringify(this.context.value, null, 2) ?? "null", pattern, this.grepLimit);
+      case "parquet":
+        return grepText(renderParquetContext(this.context), pattern, this.grepLimit);
     }
   }
 
@@ -127,6 +137,12 @@ class NodeEnvironment {
       case "json": {
         return chunkJsonContext(this.context, size ?? this.maxChunkChars);
       }
+      case "parquet": {
+        const ctx = this.context;
+        const maxChars = Math.max(500, Math.min(size ?? this.maxChunkChars, this.maxChunkChars));
+        const groups = chunkGenericRows(ctx.rows, maxChars);
+        return groups.map((rows, index) => ({ kind: "parquet", label: `${ctx.label}#chunk${index + 1}`, path: ctx.path, columns: ctx.columns, rows }));
+      }
     }
   }
 
@@ -147,6 +163,8 @@ class NodeEnvironment {
         return renderCsvContext(context);
       case "json":
         return JSON.stringify(context.value, null, 2) ?? "null";
+      case "parquet":
+        return renderParquetContext(context);
     }
   }
 
@@ -160,6 +178,8 @@ class NodeEnvironment {
         return { kind: "csv", text: context.text, columns: context.columns, rows: context.rows };
       case "json":
         return { kind: "json", value: context.value };
+      case "parquet":
+        return { kind: "parquet", path: context.path, columns: context.columns, rows: context.rows };
     }
   }
 }
@@ -465,7 +485,7 @@ function shouldPreferEvaluation(task: string, contextKind: RlmContextKind): bool
   if (contextKind === "files" && /\b(codebase|repository|repo|file|files|module|import|function|class|symbol|definition|defined|usage|call sites?)\b/i.test(task)) {
     return true;
   }
-  if ((contextKind === "csv" || contextKind === "json") && /\b(row|rows|column|columns|field|fields|json|csv|array|object|key|keys)\b/i.test(task)) {
+  if ((contextKind === "csv" || contextKind === "json" || contextKind === "parquet") && /\b(row|rows|column|columns|field|fields|json|csv|parquet|array|object|key|keys)\b/i.test(task)) {
     return true;
   }
   return false;
@@ -486,6 +506,10 @@ async function resolveContext(input: StartRunInput): Promise<ResolvedContext> {
     const text = input.context !== undefined ? input.context : input.contextPath ? await fs.readFile(resolve(input.cwd, input.contextPath), "utf8") : "null";
     return parseJsonContext(text, input.contextPath ?? "inline-json");
   }
+  if (inferredKind === "parquet") {
+    if (!input.contextPath) throw new Error("contextKind=parquet requires contextPath");
+    return loadParquetContext(resolve(input.cwd, input.contextPath), input.contextPath);
+  }
   if (input.context !== undefined) return { kind: "text", label: "inline", text: input.context };
   if (input.contextPath) return { kind: "text", label: input.contextPath, text: await fs.readFile(resolve(input.cwd, input.contextPath), "utf8") };
   return { kind: "text", label: "empty", text: "" };
@@ -497,6 +521,7 @@ async function inferContextKind(contextPath: string, cwd: string): Promise<RlmCo
   if (stat.isDirectory()) return "files";
   if (/\.csv$/i.test(fullPath)) return "csv";
   if (/\.json$/i.test(fullPath)) return "json";
+  if (/\.parquet$/i.test(fullPath)) return "parquet";
   return "text";
 }
 
@@ -552,6 +577,13 @@ function parseJsonContext(text: string, label: string): ResolvedContext {
   }
 }
 
+async function loadParquetContext(fullPath: string, label: string): Promise<ResolvedContext> {
+  const file = await asyncBufferFromFile(fullPath);
+  const rows = await parquetReadObjects({ file });
+  const columns = inferColumns(rows.map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, String(v ?? "")]))));
+  return { kind: "parquet", label, path: fullPath, columns, rows };
+}
+
 function coerceSubcontext(value: unknown, parent: ResolvedContext): ResolvedContext {
   if (value === undefined) return parent;
   if (typeof value === "string") return { kind: "text", label: `${parent.label}#repl`, text: value };
@@ -569,12 +601,22 @@ function coerceSubcontext(value: unknown, parent: ResolvedContext): ResolvedCont
         .map((file) => ({ path: String(file.path), text: String(file.text) }));
       return { kind: "files", label: `${parent.label}#repl-files`, root: typeof value.root === "string" ? value.root : parent.kind === "files" ? parent.root : parent.label, files };
     }
+    if (value.kind === "parquet" && Array.isArray(value.rows)) {
+      const rows = value.rows.filter(isRecord);
+      const columns = Array.isArray(value.columns) ? value.columns.map(String) : inferColumns(rows.map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, String(v ?? "")]))));
+      return { kind: "parquet", label: `${parent.label}#repl-parquet`, path: typeof value.path === "string" ? value.path : parent.label, columns, rows };
+    }
   }
   return { kind: "json", label: `${parent.label}#repl-json`, value };
 }
 
 function renderCsvContext(context: { columns: string[]; rows: CsvRow[]; text: string }): string {
   return context.text || renderCsv(context.columns, context.rows);
+}
+
+function renderParquetContext(context: { columns: string[]; rows: Array<Record<string, unknown>>; path: string }): string {
+  const preview = context.rows.slice(0, 50).map((row) => JSON.stringify(row)).join("\n");
+  return [`# parquet_path=${context.path}`, `# columns=${context.columns.join(",")}`, preview].filter(Boolean).join("\n");
 }
 
 function renderCsv(columns: string[], rows: CsvRow[]): string {
@@ -679,6 +721,24 @@ function chunkCsvRows(rows: CsvRow[], maxChars: number): CsvRow[][] {
   return groups;
 }
 
+function chunkGenericRows<T extends Record<string, unknown>>(rows: T[], maxChars: number): T[][] {
+  const groups: T[][] = [];
+  let current: T[] = [];
+  let currentChars = 0;
+  for (const row of rows) {
+    const cost = JSON.stringify(row)?.length ?? 32;
+    if (current.length > 0 && currentChars + cost > maxChars) {
+      groups.push(current);
+      current = [];
+      currentChars = 0;
+    }
+    current.push(row);
+    currentChars += cost;
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
 function chunkJsonContext(context: { kind: "json"; label: string; value: unknown }, maxChars: number): ResolvedContext[] {
   if (Array.isArray(context.value)) {
     const groups: unknown[][] = [];
@@ -728,6 +788,8 @@ function summarizeContextSize(context: ResolvedContext): string {
       return `${context.rows.length} rows / ${context.columns.length} columns`;
     case "json":
       return `${JSON.stringify(context.value)?.length ?? 0} chars json`;
+    case "parquet":
+      return `${context.rows.length} rows / ${context.columns.length} columns parquet`;
   }
 }
 
