@@ -15,11 +15,13 @@
     "extensions",
     "skills",
     "prompts",
+    "scripts",
     "README.md",
     "CHANGELOG.md"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "validate:rlm:spark": "node ./scripts/validate-rlm-spark.mjs"
   },
   "pi": {
     "extensions": [

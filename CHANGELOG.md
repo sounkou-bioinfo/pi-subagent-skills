@@ -6,6 +6,7 @@
 - Added a shared host-side webR package cache at `/tmp/pi-webr-package-cache`
 - Fixed webR session setup to use `evalRVoid(...)` so setup code can safely return `NULL`
 - Hardened base-R JSON signaling/escaping used by recursive webR RLM helpers
+- Added `npm run validate:rlm:spark` for focused spark-based end-to-end RLM validation
 
 ## 0.1.0
 

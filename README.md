@@ -129,6 +129,7 @@ Within a single RLM node, `r_eval` now reuses a persistent webR session so varia
 For parquet in webR, `context_load()` prefers real parquet readers (`arrow` or `duckdb+DBI`) when available and otherwise falls back to an embedded in-memory data frame built from the parsed parquet rows.
 When `backend="tmux"`, RLM starts a tmux visualizer session over events/tree/output artifacts.
 Completed runs now also surface a top-level `strategy:` line such as `repl_eval -> final` or `r_eval -> final` so CLI/json output makes the execution path easier to verify.
+A focused spark-based end-to-end validator is included as `npm run validate:rlm:spark`; it exercises `FINAL_VAR(...)`, recursive `rlm_call(...)`, webR package installation/cache reuse, and plot artifact export.
 
 ## Notes
 
