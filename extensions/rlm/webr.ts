@@ -4,6 +4,7 @@ import { rLoadCodeForContext, type ReplContext } from "./repl.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const defaultWebRRepo = "https://repo.r-wasm.org/";
 
 export async function evalWithWebR(code: string, context: Extract<ReplContext, { kind: "text" | "csv" | "parquet" }>, scopeId = "default"): Promise<string> {
   const webR = await createWebR();
@@ -14,6 +15,14 @@ export async function evalWithWebR(code: string, context: Extract<ReplContext, {
     tempPaths.push(...prepared.tempPaths);
     const wrapped = [
       ...prepared.setup,
+      `options(repos = c(CRAN = ${toRStringLiteral(defaultWebRRepo)}))`,
+      'install_webr_packages <- function(packages, repos = getOption("repos")[["CRAN"]]) {',
+      '  packages <- as.character(packages)',
+      '  if (!length(packages)) return(invisible(character()))',
+      '  if (!requireNamespace("webr", quietly = TRUE)) stop("The webR support package is not available")',
+      '  webr::install(packages, repos = repos)',
+      '  invisible(packages)',
+      '}',
       'context_lines <- function() strsplit(context_text, "\\n", fixed = TRUE)[[1]]',
       'context_grep <- function(pattern, limit = 20) {',
       '  hits <- grep(pattern, context_lines(), value = TRUE, ignore.case = TRUE, perl = TRUE)',

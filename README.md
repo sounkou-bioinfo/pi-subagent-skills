@@ -120,6 +120,7 @@ Inside `repl_eval`, `rLoadCode()` returns context-aware R loading code for text/
 If a `repl_eval` result includes that snippet under a field like `rLoadCode`, the top-level RLM summary also surfaces it as an `r_load_code:` block.
 RLM also extracts `r_load_code:` from `r_eval` outputs when the loader snippet is returned directly or under a `Loader snippet:` section.
 Inside `r_eval`, `context_load()` loads the current text/csv/parquet context in R and `context_r_load_code()` returns the loader snippet.
+Inside `r_eval`, `install_webr_packages(c("pkg"))` installs wasm-ready packages from the webR binary repository at `https://repo.r-wasm.org/` using the supported webR package path.
 For parquet in webR, `context_load()` prefers real parquet readers (`arrow` or `duckdb+DBI`) when available and otherwise falls back to an embedded in-memory data frame built from the parsed parquet rows.
 When `backend="tmux"`, RLM starts a tmux visualizer session over events/tree/output artifacts.
 Completed runs now also surface a top-level `strategy:` line such as `repl_eval -> final` or `r_eval -> final` so CLI/json output makes the execution path easier to verify.
