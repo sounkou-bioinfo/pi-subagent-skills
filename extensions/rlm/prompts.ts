@@ -47,6 +47,7 @@ export function plannerPrompt(input: {
     "- Inside r_eval, save_plot(\"plot.png\", expr) saves a plot into the run artifacts directory and returns the artifact filename",
     "- Inside r_eval, rlm_call(task, subcontext = NULL, context_kind = NULL) launches a recursive child RLM call from R and returns a list with result/error/contextKind/strategy",
     "- Inside r_eval, FINAL(x) returns a final answer directly from R and FINAL_VAR(\"name\") returns the value of a named R variable",
+    "- r_eval reuses a persistent webR session within the same node, so R variables created in one r_eval step remain available to later r_eval steps for that node",
     "- solve: solve directly over the current context subset",
     "- final: return final answer if confident",
     "",

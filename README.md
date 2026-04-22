@@ -124,6 +124,7 @@ Inside `r_eval`, `install_webr_packages(c("pkg"))` installs wasm-ready packages 
 Inside `r_eval`, `save_plot("plot.png", expr)` saves plot files into the run artifact directory and returns the artifact filename.
 Inside `r_eval`, `rlm_call(task, subcontext = NULL, context_kind = NULL)` launches a recursive child RLM call from R and returns a list with `result`, `error`, `contextKind`, and `strategy`.
 Inside `r_eval`, `FINAL(x)` returns a final answer directly from R and `FINAL_VAR("name")` returns the value of a named R variable.
+Within a single RLM node, `r_eval` now reuses a persistent webR session so variables created in one `r_eval` step can be reused by later `r_eval` steps for that same node.
 For parquet in webR, `context_load()` prefers real parquet readers (`arrow` or `duckdb+DBI`) when available and otherwise falls back to an embedded in-memory data frame built from the parsed parquet rows.
 When `backend="tmux"`, RLM starts a tmux visualizer session over events/tree/output artifacts.
 Completed runs now also surface a top-level `strategy:` line such as `repl_eval -> final` or `r_eval -> final` so CLI/json output makes the execution path easier to verify.

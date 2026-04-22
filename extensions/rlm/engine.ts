@@ -8,7 +8,7 @@ import { evalInRepl, type ReplContext } from "./repl.js";
 import { startTmuxVisualizer } from "./tmux.js";
 import type { RlmAction, RlmContextKind, RlmNode, RlmObservation, RlmRunResult, RunArtifacts, StartRunInput } from "./types.js";
 import { chunkText, extractFirstJsonObject, grepText, normalizeTask, safeJsonParse, shortText } from "./utils.js";
-import { evalWithWebR } from "./webr.js";
+import { createWebRSession, evalWithWebR, type WebRSession } from "./webr.js";
 
 interface EngineInput extends StartRunInput {
   runId: string;
@@ -225,6 +225,7 @@ export async function runRlmEngine(input: EngineInput, signal?: AbortSignal, pro
     state.nodesVisited += 1;
     state.maxDepthSeen = Math.max(state.maxDepthSeen, params.depth);
     const env = new NodeEnvironment(params.context, input.maxChunkChars, input.grepLimit);
+    let webRSession: WebRSession | undefined;
     const node: RlmNode = {
       id: nodeId,
       depth: params.depth,
@@ -309,7 +310,7 @@ export async function runRlmEngine(input: EngineInput, signal?: AbortSignal, pro
               : params.context.kind === "csv"
                 ? { kind: "csv" as const, text: params.context.text, columns: params.context.columns, rows: params.context.rows }
                 : { kind: "text" as const, text: params.context.text };
-          const evalResult = await evalWithWebR(code, rContext, {
+          webRSession ??= await createWebRSession(rContext, {
             scopeId: `${input.runId}-${nodeId}`,
             artifactDir: artifacts.dir,
             callRlm: async (task, subcontext, contextKind) => {
@@ -329,6 +330,7 @@ export async function runRlmEngine(input: EngineInput, signal?: AbortSignal, pro
               };
             },
           });
+          const evalResult = await webRSession.eval(code);
           addObservation(node, "note", `r_eval =>\n${shortText(evalResult.output, 6000)}`);
           if (evalResult.signaledFinal) {
             node.decision = {
@@ -428,6 +430,8 @@ export async function runRlmEngine(input: EngineInput, signal?: AbortSignal, pro
       node.finishedAt = Date.now();
       log("node_error", { nodeId, error: node.error });
       return node;
+    } finally {
+      if (webRSession) await webRSession.close();
     }
   }
 

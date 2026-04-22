@@ -28,12 +28,30 @@ export interface EvalWithWebRResult {
   recursiveCalls: number;
 }
 
+export interface WebRSession {
+  eval(code: string): Promise<EvalWithWebRResult>;
+  close(): Promise<void>;
+}
+
 export async function evalWithWebR(
   code: string,
   context: Extract<ReplContext, { kind: "text" | "csv" | "parquet" }>,
   optionsOrScopeId: EvalWithWebROptions | string = "default",
   legacyArtifactDir?: string,
 ): Promise<EvalWithWebRResult> {
+  const session = await createWebRSession(context, optionsOrScopeId, legacyArtifactDir);
+  try {
+    return await session.eval(code);
+  } finally {
+    await session.close();
+  }
+}
+
+export async function createWebRSession(
+  context: Extract<ReplContext, { kind: "text" | "csv" | "parquet" }>,
+  optionsOrScopeId: EvalWithWebROptions | string = "default",
+  legacyArtifactDir?: string,
+): Promise<WebRSession> {
   const options: EvalWithWebROptions =
     typeof optionsOrScopeId === "string"
       ? { scopeId: optionsOrScopeId, artifactDir: legacyArtifactDir }
@@ -45,74 +63,99 @@ export async function evalWithWebR(
 
   const webR = await createWebR();
   const tempPaths: string[] = [];
+  const exportedArtifacts = new Set<string>();
+  let closed = false;
 
-  try {
-    const prepared = await prepareContext(webR, context, scopeId);
-    tempPaths.push(...prepared.tempPaths);
-    const webRArtifactDir = `/tmp/pi-rlm-artifacts-${sanitizeScopeId(scopeId)}`;
-    if (artifactDir) await ensureWebRDir(webR, webRArtifactDir);
+  const prepared = await prepareContext(webR, context, scopeId);
+  tempPaths.push(...prepared.tempPaths);
+  const webRArtifactDir = `/tmp/pi-rlm-artifacts-${sanitizeScopeId(scopeId)}`;
+  if (artifactDir) await ensureWebRDir(webR, webRArtifactDir);
+  await webR.evalRString(buildSessionSetup({ context, prepared, artifactDir: artifactDir ? webRArtifactDir : "" }));
 
-    const callResults: WebRCallResult[] = [];
-    for (let step = 0; step <= maxRecursiveCalls; step++) {
-      const wrapped = buildWrappedCode({
-        code,
-        context,
-        prepared,
-        artifactDir: artifactDir ? webRArtifactDir : "",
-        callResults,
-      });
-      const rawResult = await webR.evalRString(wrapped);
-      const signal = parseRlmSignal(rawResult);
-      if (!signal) return { output: await appendArtifactSummary(webR, webRArtifactDir, artifactDir, rawResult), signaledFinal: false, recursiveCalls: callResults.length };
-      if (signal.kind === "final") {
-        return {
-          output: await appendArtifactSummary(webR, webRArtifactDir, artifactDir, formatSignalPayload(signal.payload)),
-          signaledFinal: true,
-          recursiveCalls: callResults.length,
-        };
+  return {
+    async eval(code: string): Promise<EvalWithWebRResult> {
+      const callResults: WebRCallResult[] = [];
+      for (let step = 0; step <= maxRecursiveCalls; step++) {
+        const rawResult = await webR.evalRString(buildEvaluationCode(code, callResults));
+        const signal = parseRlmSignal(rawResult);
+        if (!signal) {
+          return {
+            output: await appendArtifactSummary(webR, webRArtifactDir, artifactDir, rawResult, exportedArtifacts),
+            signaledFinal: false,
+            recursiveCalls: callResults.length,
+          };
+        }
+        if (signal.kind === "final") {
+          return {
+            output: await appendArtifactSummary(webR, webRArtifactDir, artifactDir, formatSignalPayload(signal.payload), exportedArtifacts),
+            signaledFinal: true,
+            recursiveCalls: callResults.length,
+          };
+        }
+        if (signal.kind !== "call") {
+          return {
+            output: `webR error: unsupported RLM signal kind ${signal.kind}`,
+            signaledFinal: false,
+            recursiveCalls: callResults.length,
+          };
+        }
+        if (!callRlm) {
+          return {
+            output: "webR error: rlm_call() is not available in this context",
+            signaledFinal: false,
+            recursiveCalls: callResults.length,
+          };
+        }
+        if (step === maxRecursiveCalls) {
+          return {
+            output: `webR error: rlm_call() exceeded maxRecursiveCalls=${maxRecursiveCalls}`,
+            signaledFinal: false,
+            recursiveCalls: callResults.length,
+          };
+        }
+        const payload = isRecord(signal.payload) ? signal.payload : {};
+        const task = typeof payload.task === "string" ? payload.task : "";
+        if (!task) {
+          return {
+            output: "webR error: rlm_call() requested without a task",
+            signaledFinal: false,
+            recursiveCalls: callResults.length,
+          };
+        }
+        const child = await callRlm(task, payload.subcontext, typeof payload.context_kind === "string" ? payload.context_kind : undefined);
+        callResults.push(child);
       }
-      if (signal.kind !== "call") {
-        return { output: `webR error: unsupported RLM signal kind ${signal.kind}`, signaledFinal: false, recursiveCalls: callResults.length };
-      }
-      if (!callRlm) {
-        return { output: "webR error: rlm_call() is not available in this context", signaledFinal: false, recursiveCalls: callResults.length };
-      }
-      if (step === maxRecursiveCalls) {
-        return { output: `webR error: rlm_call() exceeded maxRecursiveCalls=${maxRecursiveCalls}`, signaledFinal: false, recursiveCalls: callResults.length };
-      }
-      const payload = isRecord(signal.payload) ? signal.payload : {};
-      const task = typeof payload.task === "string" ? payload.task : "";
-      if (!task) return { output: "webR error: rlm_call() requested without a task", signaledFinal: false, recursiveCalls: callResults.length };
-      const child = await callRlm(task, payload.subcontext, typeof payload.context_kind === "string" ? payload.context_kind : undefined);
-      callResults.push(child);
-    }
 
-    return { output: `webR error: rlm_call() exceeded maxRecursiveCalls=${maxRecursiveCalls}`, signaledFinal: false, recursiveCalls: callResults.length };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { output: `webR error: ${message}`, signaledFinal: false, recursiveCalls: 0 };
-  } finally {
-    for (const tempPath of tempPaths) {
+      return {
+        output: `webR error: rlm_call() exceeded maxRecursiveCalls=${maxRecursiveCalls}`,
+        signaledFinal: false,
+        recursiveCalls: maxRecursiveCalls,
+      };
+    },
+
+    async close(): Promise<void> {
+      if (closed) return;
+      closed = true;
+      for (const tempPath of tempPaths) {
+        try {
+          await webR.FS.unlink(tempPath);
+        } catch {
+          // ignore cleanup failures
+        }
+      }
       try {
-        await webR.FS.unlink(tempPath);
+        webR.close();
       } catch {
-        // ignore cleanup failures
+        // ignore shutdown failures
       }
-    }
-    try {
-      webR.close();
-    } catch {
-      // ignore shutdown failures
-    }
-  }
+    },
+  };
 }
 
-function buildWrappedCode(input: {
-  code: string;
+function buildSessionSetup(input: {
   context: Extract<ReplContext, { kind: "text" | "csv" | "parquet" }>;
   prepared: { setup: string[]; tempPaths: string[]; loadBody?: string };
   artifactDir: string;
-  callResults: WebRCallResult[];
 }): string {
   return [
     ...input.prepared.setup,
@@ -155,11 +198,9 @@ function buildWrappedCode(input: {
     'context_load <- function() {',
     input.prepared.loadBody ?? rLoadCodeForContext(input.context),
     '}',
-    `if (!requireNamespace("jsonlite", quietly = TRUE)) try(install_webr_packages("jsonlite"), silent = TRUE)`,
+    'if (!requireNamespace("jsonlite", quietly = TRUE)) try(install_webr_packages("jsonlite"), silent = TRUE)',
     'if (!requireNamespace("jsonlite", quietly = TRUE)) stop("jsonlite is required for rlm_call()/FINAL() support in webR")',
-    `.pi_rlm_prefetched_json <- ${toRStringLiteral(JSON.stringify(input.callResults))}`,
-    '.pi_rlm_prefetched <- jsonlite::fromJSON(.pi_rlm_prefetched_json, simplifyVector = FALSE)',
-    'if (is.null(.pi_rlm_prefetched)) .pi_rlm_prefetched <- list()',
+    '.pi_rlm_prefetched <- list()',
     '.pi_rlm_call_index <- 0L',
     '.pi_rlm_signal <- function(kind, payload) {',
     '  json <- jsonlite::toJSON(list(kind = kind, payload = payload), auto_unbox = TRUE, null = "null", dataframe = "rows", force = TRUE)',
@@ -175,11 +216,20 @@ function buildWrappedCode(input: {
     'FINAL_VAR <- function(name) {',
     '  key <- as.character(name)[1]',
     '  if (!nzchar(key)) stop("FINAL_VAR requires a variable name")',
-    '  FINAL(get(key, envir = parent.frame()))',
+    '  FINAL(get(key, envir = .GlobalEnv))',
     '}',
-    '.pi_rlm_user_value <- tryCatch(local({',
-    input.code,
-    '}), error = function(e) {',
+    'invisible(NULL)',
+  ].join("\n");
+}
+
+function buildEvaluationCode(code: string, callResults: WebRCallResult[]): string {
+  return [
+    `.pi_rlm_prefetched_json <- ${toRStringLiteral(JSON.stringify(callResults))}`,
+    '.pi_rlm_prefetched <- jsonlite::fromJSON(.pi_rlm_prefetched_json, simplifyVector = FALSE)',
+    'if (is.null(.pi_rlm_prefetched)) .pi_rlm_prefetched <- list()',
+    '.pi_rlm_call_index <- 0L',
+    `.pi_rlm_user_code <- ${toRStringLiteral(code)}`,
+    '.pi_rlm_user_value <- tryCatch(eval(parse(text = .pi_rlm_user_code), envir = .GlobalEnv), error = function(e) {',
     '  msg <- conditionMessage(e)',
     `  if (startsWith(msg, ${toRStringLiteral(rlmSignalPrefix)})) return(msg)`,
     '  stop(e)',
@@ -194,9 +244,17 @@ function buildWrappedCode(input: {
   ].join("\n");
 }
 
-async function appendArtifactSummary(webR: WebR, sourceRoot: string, artifactDir: string | undefined, result: string): Promise<string> {
+async function appendArtifactSummary(
+  webR: WebR,
+  sourceRoot: string,
+  artifactDir: string | undefined,
+  result: string,
+  exportedArtifacts?: Set<string>,
+): Promise<string> {
   if (!artifactDir) return result;
-  const newArtifacts = await exportWebRArtifacts(webR, sourceRoot, artifactDir);
+  const copiedArtifacts = await exportWebRArtifacts(webR, sourceRoot, artifactDir);
+  const newArtifacts = exportedArtifacts ? copiedArtifacts.filter((file) => !exportedArtifacts.has(file)) : copiedArtifacts;
+  for (const file of newArtifacts) exportedArtifacts?.add(file);
   if (newArtifacts.length === 0) return result;
   return [result, "", `artifacts_created:\n${newArtifacts.map((file) => `- ${file}`).join("\n")}`].filter(Boolean).join("\n");
 }
