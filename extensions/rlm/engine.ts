@@ -294,8 +294,8 @@ export async function runRlmEngine(input: EngineInput, signal?: AbortSignal, pro
         }
 
         if (action.action === "r_eval") {
-          if (params.context.kind !== "text" && params.context.kind !== "csv") {
-            addObservation(node, "note", "r_eval is only available for text/csv context; use repl_eval for files/json context");
+          if (params.context.kind !== "text" && params.context.kind !== "csv" && params.context.kind !== "parquet") {
+            addObservation(node, "note", "r_eval is only available for text/csv/parquet context; use repl_eval for files/json context");
             continue;
           }
           const code = action.code?.trim();
@@ -303,8 +303,13 @@ export async function runRlmEngine(input: EngineInput, signal?: AbortSignal, pro
             addObservation(node, "note", "r_eval requested without code");
             continue;
           }
-          const text = params.context.kind === "csv" ? params.context.text : params.context.text;
-          const output = await evalWithWebR(code, text, `${input.runId}-${nodeId}`);
+          const rContext =
+            params.context.kind === "parquet"
+              ? { kind: "parquet" as const, path: params.context.path, columns: params.context.columns, rows: params.context.rows }
+              : params.context.kind === "csv"
+                ? { kind: "csv" as const, text: params.context.text, columns: params.context.columns, rows: params.context.rows }
+                : { kind: "text" as const, text: params.context.text };
+          const output = await evalWithWebR(code, rContext, `${input.runId}-${nodeId}`);
           addObservation(node, "note", `r_eval =>\n${shortText(output, 6000)}`);
           continue;
         }

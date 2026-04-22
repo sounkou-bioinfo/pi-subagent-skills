@@ -208,7 +208,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function rLoadCodeForContext(context: ReplContext): string {
+export function rLoadCodeForContext(context: ReplContext): string {
   switch (context.kind) {
     case "text":
       return [
