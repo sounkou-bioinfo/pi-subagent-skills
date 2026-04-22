@@ -309,7 +309,26 @@ export async function runRlmEngine(input: EngineInput, signal?: AbortSignal, pro
               : params.context.kind === "csv"
                 ? { kind: "csv" as const, text: params.context.text, columns: params.context.columns, rows: params.context.rows }
                 : { kind: "text" as const, text: params.context.text };
-          const output = await evalWithWebR(code, rContext, `${input.runId}-${nodeId}`, artifacts.dir);
+          const output = await evalWithWebR(code, rContext, {
+            scopeId: `${input.runId}-${nodeId}`,
+            artifactDir: artifacts.dir,
+            callRlm: async (task, subcontext, contextKind) => {
+              const child = await runNode({
+                task,
+                depth: params.depth + 1,
+                lineage: [...params.lineage, normalizeTask(params.task)],
+                parentId: nodeId,
+                context: coerceRequestedSubcontext(subcontext, contextKind, params.context),
+              });
+              node.children.push(child);
+              return {
+                result: child.result,
+                error: child.error,
+                contextKind: child.contextKind,
+                strategy: child.decision?.action,
+              };
+            },
+          });
           addObservation(node, "note", `r_eval =>\n${shortText(output, 6000)}`);
           continue;
         }
@@ -587,6 +606,23 @@ async function loadParquetContext(fullPath: string, label: string): Promise<Reso
   const rows = await parquetReadObjects({ file });
   const columns = inferColumns(rows.map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, String(v ?? "")]))));
   return { kind: "parquet", label, path: fullPath, columns, rows };
+}
+
+function coerceRequestedSubcontext(value: unknown, requestedKind: string | undefined, parent: ResolvedContext): ResolvedContext {
+  if (!requestedKind) return coerceSubcontext(value, parent);
+  if (requestedKind === "text") return { kind: "text", label: `${parent.label}#r-text`, text: typeof value === "string" ? value : String(value ?? "") };
+  if (requestedKind === "json") return { kind: "json", label: `${parent.label}#r-json`, value };
+  if (requestedKind === "csv") {
+    if (Array.isArray(value)) {
+      const rows = value.filter(isRecord).map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, String(v ?? "")]))) as CsvRow[];
+      const columns = inferColumns(rows);
+      return { kind: "csv", label: `${parent.label}#r-csv`, columns, rows, text: renderCsv(columns, rows) };
+    }
+    if (isRecord(value) && Array.isArray(value.rows)) {
+      return coerceSubcontext({ kind: "csv", rows: value.rows, columns: Array.isArray(value.columns) ? value.columns : undefined }, parent);
+    }
+  }
+  return coerceSubcontext(value, parent);
 }
 
 function coerceSubcontext(value: unknown, parent: ResolvedContext): ResolvedContext {
