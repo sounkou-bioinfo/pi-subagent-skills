@@ -22,12 +22,18 @@ export interface EvalWithWebROptions {
   maxRecursiveCalls?: number;
 }
 
+export interface EvalWithWebRResult {
+  output: string;
+  signaledFinal: boolean;
+  recursiveCalls: number;
+}
+
 export async function evalWithWebR(
   code: string,
   context: Extract<ReplContext, { kind: "text" | "csv" | "parquet" }>,
   optionsOrScopeId: EvalWithWebROptions | string = "default",
   legacyArtifactDir?: string,
-): Promise<string> {
+): Promise<EvalWithWebRResult> {
   const options: EvalWithWebROptions =
     typeof optionsOrScopeId === "string"
       ? { scopeId: optionsOrScopeId, artifactDir: legacyArtifactDir }
@@ -57,30 +63,34 @@ export async function evalWithWebR(
       });
       const rawResult = await webR.evalRString(wrapped);
       const signal = parseRlmSignal(rawResult);
-      if (!signal) return await appendArtifactSummary(webR, webRArtifactDir, artifactDir, rawResult);
+      if (!signal) return { output: await appendArtifactSummary(webR, webRArtifactDir, artifactDir, rawResult), signaledFinal: false, recursiveCalls: callResults.length };
       if (signal.kind === "final") {
-        return await appendArtifactSummary(webR, webRArtifactDir, artifactDir, formatSignalPayload(signal.payload));
+        return {
+          output: await appendArtifactSummary(webR, webRArtifactDir, artifactDir, formatSignalPayload(signal.payload)),
+          signaledFinal: true,
+          recursiveCalls: callResults.length,
+        };
       }
       if (signal.kind !== "call") {
-        return `webR error: unsupported RLM signal kind ${signal.kind}`;
+        return { output: `webR error: unsupported RLM signal kind ${signal.kind}`, signaledFinal: false, recursiveCalls: callResults.length };
       }
       if (!callRlm) {
-        return "webR error: rlm_call() is not available in this context";
+        return { output: "webR error: rlm_call() is not available in this context", signaledFinal: false, recursiveCalls: callResults.length };
       }
       if (step === maxRecursiveCalls) {
-        return `webR error: rlm_call() exceeded maxRecursiveCalls=${maxRecursiveCalls}`;
+        return { output: `webR error: rlm_call() exceeded maxRecursiveCalls=${maxRecursiveCalls}`, signaledFinal: false, recursiveCalls: callResults.length };
       }
       const payload = isRecord(signal.payload) ? signal.payload : {};
       const task = typeof payload.task === "string" ? payload.task : "";
-      if (!task) return "webR error: rlm_call() requested without a task";
+      if (!task) return { output: "webR error: rlm_call() requested without a task", signaledFinal: false, recursiveCalls: callResults.length };
       const child = await callRlm(task, payload.subcontext, typeof payload.context_kind === "string" ? payload.context_kind : undefined);
       callResults.push(child);
     }
 
-    return `webR error: rlm_call() exceeded maxRecursiveCalls=${maxRecursiveCalls}`;
+    return { output: `webR error: rlm_call() exceeded maxRecursiveCalls=${maxRecursiveCalls}`, signaledFinal: false, recursiveCalls: callResults.length };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return `webR error: ${message}`;
+    return { output: `webR error: ${message}`, signaledFinal: false, recursiveCalls: 0 };
   } finally {
     for (const tempPath of tempPaths) {
       try {

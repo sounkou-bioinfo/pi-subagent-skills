@@ -309,7 +309,7 @@ export async function runRlmEngine(input: EngineInput, signal?: AbortSignal, pro
               : params.context.kind === "csv"
                 ? { kind: "csv" as const, text: params.context.text, columns: params.context.columns, rows: params.context.rows }
                 : { kind: "text" as const, text: params.context.text };
-          const output = await evalWithWebR(code, rContext, {
+          const evalResult = await evalWithWebR(code, rContext, {
             scopeId: `${input.runId}-${nodeId}`,
             artifactDir: artifacts.dir,
             callRlm: async (task, subcontext, contextKind) => {
@@ -329,7 +329,17 @@ export async function runRlmEngine(input: EngineInput, signal?: AbortSignal, pro
               };
             },
           });
-          addObservation(node, "note", `r_eval =>\n${shortText(output, 6000)}`);
+          addObservation(node, "note", `r_eval =>\n${shortText(evalResult.output, 6000)}`);
+          if (evalResult.signaledFinal) {
+            node.decision = {
+              action: "final",
+              reason: evalResult.recursiveCalls > 0 ? `FINAL(...) returned from r_eval after ${evalResult.recursiveCalls} webR child call(s)` : "FINAL(...) returned from r_eval",
+            };
+            node.result = evalResult.output.trim();
+            node.status = "completed";
+            node.finishedAt = Date.now();
+            return node;
+          }
           continue;
         }
 
