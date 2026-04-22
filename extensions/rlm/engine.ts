@@ -309,7 +309,7 @@ export async function runRlmEngine(input: EngineInput, signal?: AbortSignal, pro
               : params.context.kind === "csv"
                 ? { kind: "csv" as const, text: params.context.text, columns: params.context.columns, rows: params.context.rows }
                 : { kind: "text" as const, text: params.context.text };
-          const output = await evalWithWebR(code, rContext, `${input.runId}-${nodeId}`);
+          const output = await evalWithWebR(code, rContext, `${input.runId}-${nodeId}`, artifacts.dir);
           addObservation(node, "note", `r_eval =>\n${shortText(output, 6000)}`);
           continue;
         }

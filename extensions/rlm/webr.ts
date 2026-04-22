@@ -1,3 +1,4 @@
+import { dirname, join } from "node:path";
 import { TextEncoder, TextDecoder } from "node:util";
 import type { WebR } from "webr";
 import { rLoadCodeForContext, type ReplContext } from "./repl.js";
@@ -6,15 +7,23 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const defaultWebRRepo = "https://repo.r-wasm.org/";
 
-export async function evalWithWebR(code: string, context: Extract<ReplContext, { kind: "text" | "csv" | "parquet" }>, scopeId = "default"): Promise<string> {
+export async function evalWithWebR(
+  code: string,
+  context: Extract<ReplContext, { kind: "text" | "csv" | "parquet" }>,
+  scopeId = "default",
+  artifactDir?: string,
+): Promise<string> {
   const webR = await createWebR();
   const tempPaths: string[] = [];
 
   try {
     const prepared = await prepareContext(webR, context, scopeId);
     tempPaths.push(...prepared.tempPaths);
+    const webRArtifactDir = `/tmp/pi-rlm-artifacts-${sanitizeScopeId(scopeId)}`;
+    if (artifactDir) await ensureWebRDir(webR, webRArtifactDir);
     const wrapped = [
       ...prepared.setup,
+      `artifact_dir <- ${toRStringLiteral(artifactDir ? webRArtifactDir : "")}`,
       `options(repos = c(CRAN = ${toRStringLiteral(defaultWebRRepo)}))`,
       'install_webr_packages <- function(packages, repos = getOption("repos")[["CRAN"]]) {',
       '  packages <- as.character(packages)',
@@ -22,6 +31,22 @@ export async function evalWithWebR(code: string, context: Extract<ReplContext, {
       '  if (!requireNamespace("webr", quietly = TRUE)) stop("The webR support package is not available")',
       '  webr::install(packages, repos = repos)',
       '  invisible(packages)',
+      '}',
+      'save_plot <- function(filename, expr, device = c("png", "pdf", "svg"), width = 800, height = 600, pointsize = 12, bg = "white", ...) {',
+      '  if (!nzchar(artifact_dir)) stop("artifact_dir is not configured")',
+      '  device <- match.arg(device)',
+      '  path <- file.path(artifact_dir, filename)',
+      '  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)',
+      '  if (device == "png") {',
+      '    grDevices::png(path, width = width, height = height, pointsize = pointsize, bg = bg, ...)',
+      '  } else if (device == "pdf") {',
+      '    grDevices::pdf(path, width = width / 72, height = height / 72, pointsize = pointsize, bg = bg, ...)',
+      '  } else if (device == "svg") {',
+      '    grDevices::svg(path, width = width / 72, height = height / 72, pointsize = pointsize, bg = bg, ...)',
+      '  }',
+      '  on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)',
+      '  eval(substitute(expr), envir = parent.frame())',
+      '  filename',
       '}',
       'context_lines <- function() strsplit(context_text, "\\n", fixed = TRUE)[[1]]',
       'context_grep <- function(pattern, limit = 20) {',
@@ -44,7 +69,10 @@ export async function evalWithWebR(code: string, context: Extract<ReplContext, {
     ].join("\n");
 
     const result = await webR.evalRString(wrapped);
-    return result;
+    if (!artifactDir) return result;
+    const newArtifacts = await exportWebRArtifacts(webR, webRArtifactDir, artifactDir);
+    if (newArtifacts.length === 0) return result;
+    return [result, "", `artifacts_created:\n${newArtifacts.map((file) => `- ${file}`).join("\n")}`].filter(Boolean).join("\n");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return `webR error: ${message}`;
@@ -134,6 +162,54 @@ function toRValueLiteral(value: unknown): string {
 async function readBytes(path: string): Promise<Uint8Array> {
   const fs = await import("node:fs/promises");
   return fs.readFile(path);
+}
+
+async function exportWebRArtifacts(webR: WebR, sourceRoot: string, destRoot: string): Promise<string[]> {
+  const fs = await import("node:fs/promises");
+  const files = await listWebRFiles(webR, sourceRoot);
+  const copied: string[] = [];
+  for (const rel of files) {
+    const sourcePath = `${sourceRoot}/${rel}`;
+    const destPath = join(destRoot, rel);
+    const bytes = await webR.FS.readFile(sourcePath);
+    await fs.mkdir(dirname(destPath), { recursive: true });
+    await fs.writeFile(destPath, bytes);
+    copied.push(rel);
+  }
+  return copied.sort();
+}
+
+async function listWebRFiles(webR: WebR, root: string): Promise<string[]> {
+  const out: string[] = [];
+  async function walk(dir: string, prefix = ""): Promise<void> {
+    let node;
+    try {
+      node = await webR.FS.lookupPath(dir);
+    } catch {
+      return;
+    }
+    for (const entry of Object.values(node.contents ?? {})) {
+      const full = `${dir}/${entry.name}`;
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isFolder) await walk(full, rel);
+      else out.push(rel);
+    }
+  }
+  await walk(root);
+  return out;
+}
+
+async function ensureWebRDir(webR: WebR, path: string): Promise<void> {
+  const parts = path.split("/").filter(Boolean);
+  let current = "";
+  for (const part of parts) {
+    current += `/${part}`;
+    try {
+      await webR.FS.lookupPath(current);
+    } catch {
+      await webR.FS.mkdir(current);
+    }
+  }
 }
 
 function sanitizeScopeId(scopeId: string): string {

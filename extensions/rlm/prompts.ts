@@ -44,6 +44,7 @@ export function plannerPrompt(input: {
     "- If the user asks about R loading code, include it in your repl_eval result under a key like rLoadCode so it is visible in the final run summary",
     "- r_eval(code): run R/webR code over text/csv/parquet context; use this for tabular and line-oriented analysis in R",
     "- Inside r_eval, install_webr_packages(c(...)) installs wasm-ready R packages from the webR binary repo (https://repo.r-wasm.org/)",
+    "- Inside r_eval, save_plot(\"plot.png\", expr) saves a plot into the run artifacts directory and returns the artifact filename",
     "- solve: solve directly over the current context subset",
     "- final: return final answer if confident",
     "",
