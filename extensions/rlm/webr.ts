@@ -7,6 +7,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const defaultWebRRepo = "https://repo.r-wasm.org/";
 const rlmSignalPrefix = "__PI_RLM_SIGNAL__";
+const sharedWebRPackageCacheDir = "/tmp/pi-webr-package-cache";
 
 export interface WebRCallResult {
   result?: string;
@@ -69,8 +70,11 @@ export async function createWebRSession(
   const prepared = await prepareContext(webR, context, scopeId);
   tempPaths.push(...prepared.tempPaths);
   const webRArtifactDir = `/tmp/pi-rlm-artifacts-${sanitizeScopeId(scopeId)}`;
+  const webRPackageLibDir = `/tmp/pi-webr-lib-${sanitizeScopeId(scopeId)}`;
   if (artifactDir) await ensureWebRDir(webR, webRArtifactDir);
-  await webR.evalRString(buildSessionSetup({ context, prepared, artifactDir: artifactDir ? webRArtifactDir : "" }));
+  await ensureWebRDir(webR, webRPackageLibDir);
+  await restoreWebRPackageCache(webR, webRPackageLibDir, sharedWebRPackageCacheDir);
+  await webR.evalRString(buildSessionSetup({ context, prepared, artifactDir: artifactDir ? webRArtifactDir : "", packageLibDir: webRPackageLibDir }));
 
   return {
     async eval(code: string): Promise<EvalWithWebRResult> {
@@ -81,6 +85,7 @@ export async function createWebRSession(
         if (!signal) {
           return {
             output: await appendArtifactSummary(webR, webRArtifactDir, artifactDir, rawResult, exportedArtifacts),
+            
             signaledFinal: false,
             recursiveCalls: callResults.length,
           };
@@ -136,6 +141,7 @@ export async function createWebRSession(
     async close(): Promise<void> {
       if (closed) return;
       closed = true;
+      await syncWebRPackageCache(webR, webRPackageLibDir, sharedWebRPackageCacheDir);
       for (const tempPath of tempPaths) {
         try {
           await webR.FS.unlink(tempPath);
@@ -156,16 +162,23 @@ function buildSessionSetup(input: {
   context: Extract<ReplContext, { kind: "text" | "csv" | "parquet" }>;
   prepared: { setup: string[]; tempPaths: string[]; loadBody?: string };
   artifactDir: string;
+  packageLibDir: string;
 }): string {
   return [
     ...input.prepared.setup,
     `artifact_dir <- ${toRStringLiteral(input.artifactDir)}`,
+    `.pi_pkg_lib <- ${toRStringLiteral(input.packageLibDir)}`,
     `options(repos = c(CRAN = ${toRStringLiteral(defaultWebRRepo)}))`,
+    '.libPaths(unique(c(.pi_pkg_lib, .libPaths())))',
     'install_webr_packages <- function(packages, repos = getOption("repos")[["CRAN"]]) {',
-    '  packages <- as.character(packages)',
+    '  packages <- unique(as.character(packages))',
     '  if (!length(packages)) return(invisible(character()))',
     '  if (!requireNamespace("webr", quietly = TRUE)) stop("The webR support package is not available")',
-    '  webr::install(packages, repos = repos)',
+    '  old_libpaths <- .libPaths()',
+    '  on.exit(.libPaths(old_libpaths), add = TRUE)',
+    '  .libPaths(unique(c(.pi_pkg_lib, old_libpaths)))',
+    '  missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly = TRUE)]',
+    '  if (length(missing)) webr::install(missing, repos = repos)',
     '  invisible(packages)',
     '}',
     'save_plot <- function(filename, expr, device = c("png", "pdf", "svg"), width = 800, height = 600, pointsize = 12, bg = "white", ...) {',
@@ -198,12 +211,55 @@ function buildSessionSetup(input: {
     'context_load <- function() {',
     input.prepared.loadBody ?? rLoadCodeForContext(input.context),
     '}',
-    'if (!requireNamespace("jsonlite", quietly = TRUE)) try(install_webr_packages("jsonlite"), silent = TRUE)',
-    'if (!requireNamespace("jsonlite", quietly = TRUE)) stop("jsonlite is required for rlm_call()/FINAL() support in webR")',
+    '.pi_rlm_escape_json_string <- function(x) {',
+    '  x <- enc2utf8(as.character(x))',
+    '  bytes <- utf8ToInt(x)',
+    '  parts <- vapply(bytes, function(b) {',
+    '    ch <- intToUtf8(b)',
+    '    if (b == 34) return("\\\"")',
+    '    if (b == 92) return("\\\\")',
+    '    if (b == 10) return("\\n")',
+    '    if (b == 13) return("\\r")',
+    '    if (b == 9) return("\\t")',
+    '    if (b < 32) return(sprintf("\\\\u%04x", b))',
+    '    ch',
+    '  }, character(1))',
+    '  paste0("\"", paste(parts, collapse = ""), "\"")',
+    '}',
+    '.pi_rlm_to_json <- function(x) {',
+    '  if (is.null(x)) return("null")',
+    '  if (is.character(x)) {',
+    '    if (length(x) == 1) return(.pi_rlm_escape_json_string(x))',
+    '    return(paste0("[", paste(vapply(x, .pi_rlm_escape_json_string, character(1)), collapse = ","), "]"))',
+    '  }',
+    '  if (is.logical(x)) {',
+    '    vals <- ifelse(is.na(x), "null", ifelse(x, "true", "false"))',
+    '    if (length(vals) == 1) return(vals)',
+    '    return(paste0("[", paste(vals, collapse = ","), "]"))',
+    '  }',
+    '  if (is.numeric(x) || is.integer(x)) {',
+    '    vals <- ifelse(is.na(x) | !is.finite(x), "null", as.character(x))',
+    '    if (length(vals) == 1) return(vals)',
+    '    return(paste0("[", paste(vals, collapse = ","), "]"))',
+    '  }',
+    '  if (is.data.frame(x)) {',
+    '    rows <- lapply(seq_len(nrow(x)), function(i) as.list(x[i, , drop = FALSE]))',
+    '    return(.pi_rlm_to_json(rows))',
+    '  }',
+    '  if (is.list(x)) {',
+    '    nms <- names(x)',
+    '    if (!is.null(nms) && any(nzchar(nms))) {',
+    '      parts <- Map(function(k, v) paste0(.pi_rlm_escape_json_string(k), ":", .pi_rlm_to_json(v)), ifelse(nzchar(nms), nms, paste0("V", seq_along(x))), x)',
+    '      return(paste0("{", paste(unlist(parts), collapse = ","), "}"))',
+    '    }',
+    '    return(paste0("[", paste(vapply(x, .pi_rlm_to_json, character(1)), collapse = ","), "]"))',
+    '  }',
+    '  .pi_rlm_escape_json_string(paste(capture.output(print(x)), collapse = "\\n"))',
+    '}',
     '.pi_rlm_prefetched <- list()',
     '.pi_rlm_call_index <- 0L',
     '.pi_rlm_signal <- function(kind, payload) {',
-    '  json <- jsonlite::toJSON(list(kind = kind, payload = payload), auto_unbox = TRUE, null = "null", dataframe = "rows", force = TRUE)',
+    '  json <- paste0("{\"kind\":", .pi_rlm_to_json(kind), ",\"payload\":", .pi_rlm_to_json(payload), "}")',
     `  stop(paste0(${toRStringLiteral(rlmSignalPrefix)}, json), call. = FALSE)`,
     '}',
     'rlm_call <- function(task, subcontext = NULL, context_kind = NULL) {',
@@ -224,8 +280,7 @@ function buildSessionSetup(input: {
 
 function buildEvaluationCode(code: string, callResults: WebRCallResult[]): string {
   return [
-    `.pi_rlm_prefetched_json <- ${toRStringLiteral(JSON.stringify(callResults))}`,
-    '.pi_rlm_prefetched <- jsonlite::fromJSON(.pi_rlm_prefetched_json, simplifyVector = FALSE)',
+    `.pi_rlm_prefetched <- ${toRLiteral(callResults)}`,
     'if (is.null(.pi_rlm_prefetched)) .pi_rlm_prefetched <- list()',
     '.pi_rlm_call_index <- 0L',
     `.pi_rlm_user_code <- ${toRStringLiteral(code)}`,
@@ -402,6 +457,65 @@ function formatSignalPayload(value: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, any> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function toRLiteral(value: unknown): string {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "string") return toRStringLiteral(value);
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "NA_real_";
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  if (typeof value === "bigint") return String(value);
+  if (Array.isArray(value)) return `list(${value.map((item) => toRLiteral(item)).join(", ")})`;
+  if (isRecord(value)) {
+    const entries = Object.entries(value).map(([key, item]) => `${toRName(key)} = ${toRLiteral(item)}`);
+    return `list(${entries.join(", ")})`;
+  }
+  return toRStringLiteral(String(value));
+}
+
+async function restoreWebRPackageCache(webR: WebR, destRoot: string, cacheRoot: string): Promise<void> {
+  const fs = await import("node:fs/promises");
+  try {
+    await fs.access(cacheRoot);
+  } catch {
+    return;
+  }
+  const files = await listHostFiles(cacheRoot);
+  for (const rel of files) {
+    const sourcePath = join(cacheRoot, rel);
+    const destPath = `${destRoot}/${rel}`;
+    const bytes = await fs.readFile(sourcePath);
+    await ensureWebRDir(webR, dirname(destPath));
+    await webR.FS.writeFile(destPath, bytes);
+  }
+}
+
+async function syncWebRPackageCache(webR: WebR, sourceRoot: string, cacheRoot: string): Promise<void> {
+  const fs = await import("node:fs/promises");
+  const files = await listWebRFiles(webR, sourceRoot);
+  for (const rel of files) {
+    const sourcePath = `${sourceRoot}/${rel}`;
+    const destPath = join(cacheRoot, rel);
+    const bytes = await webR.FS.readFile(sourcePath);
+    await fs.mkdir(dirname(destPath), { recursive: true });
+    await fs.writeFile(destPath, bytes);
+  }
+}
+
+async function listHostFiles(root: string): Promise<string[]> {
+  const fs = await import("node:fs/promises");
+  const out: string[] = [];
+  async function walk(dir: string, prefix = ""): Promise<void> {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full, rel);
+      else out.push(rel);
+    }
+  }
+  await walk(root);
+  return out;
 }
 
 function sanitizeScopeId(scopeId: string): string {
