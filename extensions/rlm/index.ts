@@ -138,13 +138,14 @@ function describeRecord(record: RunRecord): string {
   return lines.join("\n");
 }
 
-function formatCompletedRunText(result: { runId: string; artifacts: { dir: string }; final: string; visualizerSession?: string; root: { decision?: { action: string }; observations: Array<{ kind: string; text: string }>; children: Array<{ id: string; task: string; status: string; result?: string; error?: string }> } }): string {
+function formatCompletedRunText(result: { runId: string; artifacts: { dir: string }; final: string; visualizerSession?: string; stats?: { durationMs: number }; root: { decision?: { action: string }; observations: Array<{ kind: string; text: string }>; children: Array<{ id: string; task: string; status: string; result?: string; error?: string }> } }): string {
   const lines = [
     "RLM run completed.",
     `run_id: ${result.runId}`,
     `artifacts: ${result.artifacts.dir}`,
     `strategy: ${summarizeStrategy(result)}`,
   ];
+  if (typeof result.stats?.durationMs === "number") lines.push(`duration_ms: ${result.stats.durationMs}`);
   if (result.visualizerSession) lines.push(`tmux_session: ${result.visualizerSession}`);
   const childSummary = summarizeChildren(result.root);
   if (childSummary.length > 0) lines.push(...childSummary);

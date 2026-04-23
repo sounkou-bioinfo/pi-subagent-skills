@@ -7,6 +7,7 @@
 - Fixed webR session setup to use `evalRVoid(...)` so setup code can safely return `NULL`
 - Hardened base-R JSON signaling/escaping used by recursive webR RLM helpers
 - Added `npm run validate:rlm:spark` for focused spark-based end-to-end RLM validation
+- Surfaced `duration_ms` in completed top-level RLM output
 
 ## 0.1.0
 
